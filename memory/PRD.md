@@ -1,47 +1,53 @@
-# Navixy Fleet Dashboard - PRD
+# LOGITAG Dashboard - PRD
 
-## Architecture
-- Frontend: React + Tailwind + Recharts
-- Backend: FastAPI + MongoDB + Navixy API
-- Deployment: Docker Compose + Nginx + SSL on Infomaniak VPS (83.228.207.198)
+## Architecture SaaS
+- **Un seul Dashboard** avec 6 onglets horizontaux
+- **Sidebar** : Dashboard, Documents, Livre de bord, Alertes, Parametres
+- **Onglets** : Vue generale | Performance | Conducteurs | Vehicules | Couts | IoT
 
-## Frontend Architecture (Modular)
+## Component Structure
 ```
-lib/metrics.js     → Moteur calculs (score, fuel, idle, insights, risk)
-lib/api.js         → API helper
-components/shared/ → UIComponents (KPICard, InsightCard, ScoreBadge, StatusBadge, RiskCard, etc.)
-components/dashboard/ → DashboardView (8 KPIs, Insights, Risk, Charts, Table)
-components/fleet/     → FleetEfficiencyView (7 KPIs, Top/Worst, Conso chart, Table)
-components/drivers/   → DriverReportView (6 KPIs, Comparison, Filters, Detail drawer)
-components/trends/    → TrendsView
-components/iot/       → IoTFlowView
-components/layout/    → Sidebar, Header
+App.js → Sidebar + DashboardLayout
+  DashboardLayout.jsx → Header + Tabs + Tab Content
+    tabs/
+      OverviewTab.jsx  (KPIs, Insights, Charts, Engins ralenti)
+      PerformanceTab.jsx (Score, Radar, Evolution, Top 10)
+      DriversTab.jsx (KPIs, Classement, Detail drawer)
+      VehiclesTab.jsx (KPIs cliquables, Table, Detail expandable)
+      CostsTab.jsx (Financier only, Economies, Donut)
+      IoTTab.jsx (Flow editor drag-and-drop)
+  shared/
+    UIComponents.jsx (KPICard, InsightCard, ScoreBadge, etc.)
+    PeriodSelector.jsx
+  lib/
+    api.js
+    metrics.js (calculs frontend)
 ```
 
-## Calculs Frontend (metrics.js)
-- calcIdleTime, calcIdleRate, calcIdleCost
-- calcFuelConsumption, calcFuelUsed, calcFuelCost
-- calcOverconsumption
-- calcVehicleScore (weighted: efficiency 30% + idle 25% + violations 20% + conso 15% + activity 10%)
-- calcDriverScore (weighted: efficiency 40% + idle 25% + violations 20% + conso 15%)
-- generateInsights (auto-detect: low efficiency, offline, high idle, overconsumption, violations, underused)
-- calcFinancialRisk (idle cost + fuel waste + monthly estimate)
-- Constants: FUEL_PRICE=2 CHF/L, IDLE_COST=3 CHF/h, AVG_FUEL=8.5 L/100km
+## Multi-Client
+- dashboard.logitrak.ch (17 vehicules)
+- guimet.logitrak.ch (4 vehicules)
+- membrez.logitrak.ch (202 vehicules)
+- Script add-client.sh pour ajout automatise
 
-## All Completed Features
-- [x] Premium Dashboard (8 KPI, Insights CHF, Risk, 3 Charts, Table)
-- [x] Fleet page (7 KPI, Top/Worst, Conso chart, 9-col table, detail expand)
-- [x] Drivers page (6 KPI, Comparison, Filters, Radar drawer, Recommendations)
-- [x] Trends & Analytics
-- [x] IoT Flow Editor
-- [x] Real mileage (tracker/stats/mileage/read)
-- [x] Batch counters (tracker/counter/value/list)
-- [x] Multi-client subdomain routing
-- [x] Docker + SSL + iframe Navixy support
+## Backend Optimizations
+- Parallel API calls (asyncio.gather, 15 at a time)
+- 5-minute cache in memory
+- Batch mileage/odometer/engine hours APIs
+
+## Completed
+- [x] Architecture SaaS avec onglets horizontaux
+- [x] Vue generale (KPI, Insights, Engins ralenti, Charts)
+- [x] Performance (Radar, Evolution, Top 10, zero finance)
+- [x] Conducteurs (Score, Drawer radar, Filtres)
+- [x] Vehicules (KPI cliquables, Table expandable)
+- [x] Couts (Financier only, Economies possibles)
+- [x] IoT (Flow editor)
+- [x] Multi-client (3 clients actifs)
+- [x] Backend optimise (parallel + cache)
 
 ## Backlog
-- [ ] Baubit integration (waiting for API doc from Arc-Logiciels)
-- [ ] Responsive mobile optimization
-- [ ] Real-time auto-refresh
-- [ ] PDF export
-- [ ] Geofencing notifications
+- [ ] Integration Baubit (attente doc API)
+- [ ] Responsive mobile
+- [ ] Auto-refresh temps reel
+- [ ] Export PDF
