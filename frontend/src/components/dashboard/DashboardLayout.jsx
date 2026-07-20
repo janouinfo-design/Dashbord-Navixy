@@ -25,7 +25,7 @@ const TABS = [
   { id: "iot", label: "IoT", icon: Cpu },
 ];
 
-export const DashboardLayout = ({ onMenuClick }) => {
+export const DashboardLayout = () => {
   const [activeTab, setActiveTab] = useState("overview");
   const [data, setData] = useState({ stats: null, trends: null, comparison: null, idleGroups: null });
   const [loading, setLoading] = useState(true);
@@ -75,7 +75,6 @@ export const DashboardLayout = ({ onMenuClick }) => {
       <Header
         title="Dashboard"
         subtitle={`${vehicles.length} vehicules — ${activeVehicles} actifs — ${totalKm} km`}
-        onMenuClick={onMenuClick}
         onRefresh={() => fetchAll()}
         lastUpdate={lastUpdate}
         alertCount={0}

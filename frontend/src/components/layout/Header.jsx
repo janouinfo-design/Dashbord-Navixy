@@ -22,13 +22,6 @@ export const Header = ({ title, subtitle, onMenuClick, onRefresh, lastUpdate, al
   return (
     <header className="glass-header sticky top-0 z-30 h-16 flex items-center justify-between px-4 lg:px-8" data-testid="app-header">
       <div className="flex items-center gap-4">
-        <button
-          className="lg:hidden p-2 hover:bg-gray-100 rounded-lg transition-colors"
-          onClick={onMenuClick}
-          data-testid="menu-toggle"
-        >
-          <Menu size={20} className="text-gray-600" />
-        </button>
         <div>
           <h2 className="text-xl font-medium tracking-tight" style={{ fontFamily: 'Outfit, sans-serif' }}>
             {title}
