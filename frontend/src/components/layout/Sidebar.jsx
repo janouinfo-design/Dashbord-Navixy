@@ -1,14 +1,10 @@
 import { useState } from "react";
 import {
-  LayoutDashboard, FileText, BookOpen, Bell, Settings, ChevronLeft, X
+  LayoutDashboard, ChevronLeft, X
 } from "lucide-react";
 
 const modules = [
   { id: "dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { id: "documents", label: "Documents", icon: FileText },
-  { id: "logbook", label: "Livre de bord", icon: BookOpen },
-  { id: "alerts", label: "Alertes", icon: Bell },
-  { id: "settings", label: "Parametres", icon: Settings },
 ];
 
 export const Sidebar = ({ activeModule, setActiveModule, isOpen, setIsOpen, clientInfo }) => {
