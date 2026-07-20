@@ -3,13 +3,13 @@ import { API, api } from "@/lib/api";
 import { Header } from "@/components/layout/Header";
 import { PeriodSelector } from "@/components/shared/PeriodSelector";
 import {
-  BarChart3, Gauge, Users, Truck, DollarSign, Cpu,
+  BarChart3, Gauge, Users, Truck, DollarSign, Cpu, Activity,
   RefreshCw, Menu
 } from "lucide-react";
 
-// Tab components (no lazy for simplicity & reliability)
 import { OverviewTab } from "@/components/dashboard/tabs/OverviewTab";
 import { PerformanceTab } from "@/components/dashboard/tabs/PerformanceTab";
+import { EfficiencyTab } from "@/components/dashboard/tabs/EfficiencyTab";
 import { DriversTab } from "@/components/dashboard/tabs/DriversTab";
 import { VehiclesTab } from "@/components/dashboard/tabs/VehiclesTab";
 import { CostsTab } from "@/components/dashboard/tabs/CostsTab";
@@ -18,6 +18,7 @@ import { IoTTab } from "@/components/dashboard/tabs/IoTTab";
 const TABS = [
   { id: "overview", label: "Vue generale", icon: BarChart3 },
   { id: "performance", label: "Performance", icon: Gauge },
+  { id: "efficiency", label: "Efficacite", icon: Activity },
   { id: "drivers", label: "Conducteurs", icon: Users },
   { id: "vehicles", label: "Vehicules", icon: Truck },
   { id: "costs", label: "Couts", icon: DollarSign },
@@ -129,6 +130,7 @@ export const DashboardLayout = ({ onMenuClick }) => {
           <>
             {activeTab === "overview" && <OverviewTab data={data} />}
             {activeTab === "performance" && <PerformanceTab data={data} />}
+            {activeTab === "efficiency" && <EfficiencyTab data={data} />}
             {activeTab === "drivers" && <DriversTab data={data} fromDate={fromDate} toDate={toDate} />}
             {activeTab === "vehicles" && <VehiclesTab data={data} />}
             {activeTab === "costs" && <CostsTab data={data} />}
