@@ -1,9 +1,9 @@
 import { useState, useEffect } from "react";
 import {
-  Menu, RefreshCw, Bell, Clock, Calendar
+  Menu, RefreshCw, Bell, Clock, Code, FileText
 } from "lucide-react";
 
-export const Header = ({ title, subtitle, onMenuClick, onRefresh, lastUpdate, alertCount = 0, children }) => {
+export const Header = ({ title, subtitle, onRefresh, lastUpdate, alertCount = 0, children, debugMode, onDebugToggle, onExportPDF }) => {
   const [timeAgo, setTimeAgo] = useState('');
 
   useEffect(() => {
@@ -30,11 +30,9 @@ export const Header = ({ title, subtitle, onMenuClick, onRefresh, lastUpdate, al
         </div>
       </div>
 
-      <div className="flex items-center gap-3">
-        {/* Period selector slot */}
+      <div className="flex items-center gap-2">
         {children}
 
-        {/* Last update indicator */}
         {lastUpdate && (
           <div className="hidden md:flex items-center gap-1.5 text-xs text-gray-400 bg-gray-50 rounded-lg px-3 py-1.5" data-testid="last-update">
             <Clock size={12} />
@@ -42,11 +40,31 @@ export const Header = ({ title, subtitle, onMenuClick, onRefresh, lastUpdate, al
           </div>
         )}
 
-        {/* Alert bell */}
-        <button
-          className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors"
-          data-testid="alerts-bell"
-        >
+        {/* Debug toggle */}
+        {onDebugToggle && (
+          <button
+            onClick={onDebugToggle}
+            className={`p-2 rounded-lg transition-colors ${debugMode ? 'bg-violet-100 text-violet-700' : 'hover:bg-gray-100 text-gray-400'}`}
+            data-testid="debug-toggle"
+            title="Mode Debug"
+          >
+            <Code size={16} />
+          </button>
+        )}
+
+        {/* PDF export */}
+        {onExportPDF && (
+          <button
+            onClick={onExportPDF}
+            className="p-2 hover:bg-gray-100 rounded-lg transition-colors text-gray-500"
+            data-testid="export-pdf-btn"
+            title="Exporter PDF"
+          >
+            <FileText size={16} />
+          </button>
+        )}
+
+        <button className="relative p-2 hover:bg-gray-100 rounded-lg transition-colors" data-testid="alerts-bell">
           <Bell size={18} className="text-gray-500" />
           {alertCount > 0 && (
             <span className="absolute -top-0.5 -right-0.5 w-4 h-4 bg-red-500 text-white text-[10px] font-bold rounded-full flex items-center justify-center">
@@ -55,7 +73,6 @@ export const Header = ({ title, subtitle, onMenuClick, onRefresh, lastUpdate, al
           )}
         </button>
 
-        {/* Refresh button */}
         {onRefresh && (
           <button
             onClick={onRefresh}

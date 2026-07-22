@@ -1,48 +1,110 @@
-import { useMemo } from "react";
+import { useState, useEffect } from "react";
 import { MiniKPI, SectionHeader } from "@/components/shared/UIComponents";
-import { FUEL_PRICE_CHF } from "@/lib/metrics";
-import { DollarSign, Fuel, Clock, TrendingDown, BarChart3, Settings } from "lucide-react";
+import { API, api } from "@/lib/api";
+import { DollarSign, Fuel, Clock, TrendingDown, BarChart3, Settings, Save, Check, Loader2 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from "recharts";
 
-export const CostsTab = ({ data }) => {
-  const { stats, trends, comparison } = data;
+export const CostsTab = ({ data, onRefresh }) => {
+  const { stats, comparison } = data;
   const compVehicles = comparison?.vehicles || [];
   const vehicles = stats?.vehicles || [];
   const totalKm = stats?.summary?.total_mileage || 0;
 
-  // Fuel data from engine (null if no consumption rate configured)
-  const hasFuelData = vehicles.some(v => v.fuel_cost_chf !== null && v.fuel_cost_chf !== undefined);
+  // Fuel config state
+  const [fuelConfig, setFuelConfig] = useState(null);
+  const [editPrice, setEditPrice] = useState('');
+  const [editRate, setEditRate] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+
+  useEffect(() => {
+    api.get(`${API}/config/fuel`).then(res => {
+      if (res.data.success) {
+        const cfg = res.data.fuel_config;
+        setFuelConfig(cfg);
+        setEditPrice(String(cfg.default_fuel_price || 2.0));
+        setEditRate(cfg.default_consumption_rate != null ? String(cfg.default_consumption_rate) : '');
+      }
+    }).catch(() => {});
+  }, []);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const body = { default_fuel_price: parseFloat(editPrice) || 2.0 };
+      if (editRate.trim() !== '') body.default_consumption_rate = parseFloat(editRate);
+      else body.default_consumption_rate = null;
+      const res = await api.put(`${API}/config/fuel`, body);
+      if (res.data.success) {
+        setFuelConfig(res.data.fuel_config);
+        setSaved(true);
+        setTimeout(() => setSaved(false), 2000);
+        if (onRefresh) onRefresh();
+      }
+    } catch (e) { console.error(e); }
+    setSaving(false);
+  };
+
+  const hasFuelData = vehicles.some(v => v.fuel_cost_chf != null);
   const totalFuelCost = hasFuelData ? Math.round(vehicles.reduce((s, v) => s + (v.fuel_cost_chf || 0), 0)) : null;
   const totalFuelL = hasFuelData ? Math.round(vehicles.reduce((s, v) => s + (v.fuel_used_liters || 0), 0) * 10) / 10 : null;
+  const fuelPrice = fuelConfig?.default_fuel_price || 2.0;
 
-  // Top consumers by distance (real data — fuel cost per vehicle if available)
   const topByDistance = [...compVehicles]
     .filter(v => (v.total_distance_week || 0) > 0)
     .sort((a, b) => (b.total_distance_week || 0) - (a.total_distance_week || 0))
     .slice(0, 8)
-    .map(v => ({
-      name: v.label.length > 14 ? v.label.substring(0, 14) + '...' : v.label,
-      distance: v.total_distance_week || 0,
-    }));
+    .map(v => ({ name: v.label.length > 14 ? v.label.substring(0, 14) + '...' : v.label, distance: v.total_distance_week || 0 }));
 
   return (
     <div className="p-4 lg:p-8 space-y-6 max-w-[1600px] mx-auto" data-testid="costs-tab">
-      {/* Config prompt if no fuel data */}
-      {!hasFuelData && (
-        <div className="flex items-start gap-3 px-5 py-4 bg-amber-50 rounded-xl border border-amber-200">
-          <Settings size={18} className="text-amber-600 mt-0.5 flex-shrink-0" />
-          <div>
-            <div className="text-sm font-semibold text-amber-800">Configuration carburant requise</div>
-            <div className="text-xs text-amber-700 mt-1">
-              Pour afficher les couts carburant, configurez un taux de consommation moyen via l&apos;API :<br />
-              <code className="text-[10px] bg-amber-100 px-1.5 py-0.5 rounded mt-1 inline-block">
-                PUT /api/config/fuel {`{"default_consumption_rate": 8.5}`}
-              </code>
-            </div>
-            <div className="text-[10px] text-amber-600 mt-2">Prix par defaut: {FUEL_PRICE_CHF} CHF/L (configurable)</div>
+      {/* Fuel Config Panel */}
+      <div className="bg-white rounded-xl border border-gray-200 p-6" data-testid="fuel-config-panel">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <div className="p-1.5 bg-amber-100 rounded-lg"><Settings size={14} className="text-amber-600" /></div>
+            <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-800" style={{ fontFamily: 'Outfit, sans-serif' }}>Configuration Carburant</h3>
           </div>
+          {saved && <span className="flex items-center gap-1 text-xs text-emerald-600 font-medium"><Check size={14} /> Sauvegarde</span>}
         </div>
-      )}
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 items-end">
+          <div>
+            <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wider block mb-1.5">Prix carburant (CHF/L)</label>
+            <input
+              type="number" step="0.01" min="0" value={editPrice}
+              onChange={e => setEditPrice(e.target.value)}
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#111]/10 focus:border-gray-400"
+              data-testid="fuel-price-input"
+            />
+          </div>
+          <div>
+            <label className="text-[10px] font-medium text-gray-500 uppercase tracking-wider block mb-1.5">Taux consommation (L/100km)</label>
+            <input
+              type="number" step="0.1" min="0" value={editRate}
+              onChange={e => setEditRate(e.target.value)}
+              placeholder="Ex: 8.5"
+              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#111]/10 focus:border-gray-400"
+              data-testid="fuel-rate-input"
+            />
+            <div className="text-[9px] text-gray-400 mt-1">Laisser vide pour desactiver le calcul carburant</div>
+          </div>
+          <button
+            onClick={handleSave} disabled={saving}
+            className="flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium bg-[#111] text-white rounded-lg hover:bg-gray-800 disabled:opacity-50 transition-colors h-[38px]"
+            data-testid="fuel-save-btn"
+          >
+            {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+            Sauvegarder
+          </button>
+        </div>
+        {fuelConfig?.fuel_types && (
+          <div className="mt-3 flex items-center gap-4 text-[10px] text-gray-400">
+            <span>Diesel: {fuelConfig.fuel_types.diesel} CHF/L</span>
+            <span>Essence: {fuelConfig.fuel_types.essence} CHF/L</span>
+            <span>Electrique: {fuelConfig.fuel_types.electric_kwh} CHF/kWh</span>
+          </div>
+        )}
+      </div>
 
       {/* KPIs */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -51,12 +113,12 @@ export const CostsTab = ({ data }) => {
         {hasFuelData ? (
           <>
             <MiniKPI label="Carburant estime" value={totalFuelCost?.toLocaleString('fr-FR') || 'N/A'} unit="CHF" icon={Fuel} color="text-amber-600" subtitle={`${totalFuelL || 0} L`} />
-            <MiniKPI label="Prix carburant" value={FUEL_PRICE_CHF} unit="CHF/L" icon={DollarSign} />
+            <MiniKPI label="Prix carburant" value={fuelPrice} unit="CHF/L" icon={DollarSign} />
           </>
         ) : (
           <>
             <MiniKPI label="Carburant" value="N/A" icon={Fuel} color="text-gray-400" subtitle="Taux non configure" />
-            <MiniKPI label="Cout mensuel" value="N/A" icon={DollarSign} color="text-gray-400" />
+            <MiniKPI label="Cout estime" value="N/A" icon={DollarSign} color="text-gray-400" />
           </>
         )}
       </div>
@@ -78,7 +140,7 @@ export const CostsTab = ({ data }) => {
                   <div className="flex items-center gap-2"><div className="w-3 h-3 rounded bg-amber-500" /><span className="text-xs text-gray-600">Carburant estime</span></div>
                   <span className="text-sm font-bold tabular-nums">{totalFuelCost} CHF</span>
                 </div>
-                <div className="text-[10px] text-gray-400 mt-2">Calcule: (km / 100) × taux × prix</div>
+                <div className="text-[10px] text-gray-400 mt-2">Calcule: (km / 100) x {fuelConfig?.default_consumption_rate || '?'} L x {fuelPrice} CHF</div>
               </div>
             </div>
           </div>
@@ -92,7 +154,6 @@ export const CostsTab = ({ data }) => {
         </div>
       )}
 
-      {/* Top vehicles by distance */}
       {topByDistance.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 p-6">
           <h4 className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-4">Vehicules les plus actifs (distance 7j)</h4>

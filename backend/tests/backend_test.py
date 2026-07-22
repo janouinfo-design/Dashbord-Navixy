@@ -144,11 +144,58 @@ def test_fuel_config_put_and_fleet_stats_have_fuel(api):
     assert has_fuel, "No vehicles have fuel_used_liters/fuel_cost_chf after configuring rate"
 
 
-def test_fuel_config_reset(api):
-    """Reset consumption rate to null for clean state."""
+def test_fuel_config_reset_null(api):
+    """PUT with explicit null should clear the consumption rate."""
     r = api.put(f"{BASE_URL}/api/config/fuel", json={"default_consumption_rate": None}, timeout=TIMEOUT)
-    # PUT ignores None per current implementation - so this may not reset. Just verify no error.
     assert r.status_code == 200
+    cfg = r.json().get("fuel_config", {})
+    assert cfg.get("default_consumption_rate") is None, f"Expected null, got {cfg.get('default_consumption_rate')}"
+
+    # Subsequent fleet/stats should NOT have fuel fields (or they should be null)
+    r2 = api.get(f"{BASE_URL}/api/fleet/stats",
+                 params={"from_date": "2026-07-15", "to_date": "2026-07-22"},
+                 timeout=TIMEOUT)
+    assert r2.status_code == 200
+    vehicles = r2.json().get("vehicles", [])
+    for v in vehicles:
+        assert v.get("fuel_used_liters") in (None, 0, 0.0) or v.get("fuel_cost_chf") is None, \
+            f"Expected fuel fields to be cleared for vehicle {v.get('label')}"
+
+
+# ---------- Audit compare ----------
+def test_audit_compare(api):
+    r = api.get(f"{BASE_URL}/api/audit/compare",
+                params={"from_date": "2026-07-22", "to_date": "2026-07-22"},
+                timeout=180)
+    assert r.status_code == 200, r.text
+    data = r.json()
+    assert data.get("success") is True
+    assert "total_vehicles" in data
+    assert "mismatches" in data
+    assert "vehicles" in data
+    assert isinstance(data["vehicles"], list)
+    assert len(data["vehicles"]) > 0
+    v = data["vehicles"][0]
+    assert "navixy_raw" in v
+    assert "engine_computed" in v
+    assert "validation" in v
+    val = v["validation"]
+    for k in ("mileage", "odometer", "engine_hours", "all_match"):
+        assert k in val
+    assert "raw_navixy_calls" in data
+
+
+# ---------- PDF export ----------
+def test_export_pdf(api):
+    r = api.get(f"{BASE_URL}/api/export/pdf",
+                params={"from_date": "2026-07-15", "to_date": "2026-07-22"},
+                timeout=TIMEOUT)
+    assert r.status_code == 200, r.text
+    assert r.headers.get("content-type", "").startswith("application/pdf")
+    # Verify it's a valid PDF (starts with %PDF-)
+    content = r.content
+    assert content[:4] == b"%PDF", f"Not a valid PDF, got: {content[:10]}"
+    assert len(content) > 500, f"PDF too small: {len(content)} bytes"
 
 
 # ---------- Idle by group ----------

@@ -11,7 +11,7 @@ import {
   PieChart, Pie, Cell
 } from "recharts";
 
-export const OverviewTab = ({ data }) => {
+export const OverviewTab = ({ data, debugMode }) => {
   const { stats, trends, comparison, idleGroups } = data;
   const vehicles = stats?.vehicles || [];
   const compVehicles = comparison?.vehicles || [];
@@ -22,18 +22,29 @@ export const OverviewTab = ({ data }) => {
 
   const distSparkData = trendData.slice(-7).map(d => ({ v: d.total_distance || 0 }));
 
+  // Debug info from _audit
+  const audit = stats?._audit;
+  const avgResponseTime = audit?.navixy_calls?.length > 0
+    ? Math.round(audit.navixy_calls.reduce((s, c) => s + (c.response_time_ms || 0), 0) / audit.navixy_calls.length) : null;
+  const cacheAge = audit?.cache?.hit ? audit.cache.age_seconds : null;
+  const mkDebug = (source, field) => debugMode ? { source, field, responseTime: avgResponseTime, cacheAge } : undefined;
+
   return (
     <div className="p-4 lg:p-8 space-y-8 max-w-[1600px] mx-auto" data-testid="overview-tab">
       {/* KPI Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <KPICard label="Utilisation Flotte" value={summary.fleetScore} unit="%" icon={Gauge}
           status={summary.fleetScore >= 60 ? 'good' : summary.fleetScore >= 40 ? 'warning' : 'danger'}
+          debugInfo={mkDebug('vehicle-comparison', 'utilization_score')}
           explanation={{ title: 'Utilisation Flotte', description: 'Pourcentage moyen de jours actifs (avec km &gt; 0) sur les 7 derniers jours. Donnee 100% Navixy.', formula: '(jours_actifs / 7) × 100', tip: '&gt; 70% = bonne utilisation. &lt; 30% = vehicules potentiellement sous-exploites.' }} />
         <KPICard label="Vehicules connectes" value={`${summary.active}`} unit={`/ ${summary.total}`} icon={Truck}
-          status={summary.active > 0 ? 'good' : 'danger'} subtitle={`${summary.offline} hors ligne`} />
+          status={summary.active > 0 ? 'good' : 'danger'} subtitle={`${summary.offline} hors ligne`}
+          debugInfo={mkDebug('tracker/get_state', 'connection_status')} />
         <KPICard label="Distance parcourue" value={summary.totalKm.toFixed(0)} unit="km" icon={MapPin}
-          sparkData={distSparkData} sparkColor="#111" />
-        <KPICard label="Temps moteur" value={summary.totalEngineH.toFixed(0)} unit="h" icon={Activity} />
+          sparkData={distSparkData} sparkColor="#111"
+          debugInfo={mkDebug('tracker/stats/mileage/read', 'mileage')} />
+        <KPICard label="Temps moteur" value={summary.totalEngineH.toFixed(0)} unit="h" icon={Activity}
+          debugInfo={mkDebug('tracker/counter/value/list', 'engine_hours')} />
       </div>
 
       {/* Data source banner */}

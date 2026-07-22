@@ -487,6 +487,215 @@ async def get_tracker_position(tracker_id: int, request: Request):
 async def cache_stats():
     return {"success": True, "cache": cache.stats()}
 
+# ============ AUDIT COMPARE ============
+
+@api_router.get("/audit/compare")
+async def audit_compare(
+    request: Request,
+    from_date: str = Query(..., description="YYYY-MM-DD"),
+    to_date: str = Query(..., description="YYYY-MM-DD"),
+):
+    """Compare engine-computed values vs raw Navixy for each vehicle."""
+    h, tenant = await get_tenant_context(request)
+
+    # 1. Get engine result (may be cached)
+    engine_result = await engine.compute_fleet_stats(h, from_date, to_date, None, tenant)
+
+    # 2. Get RAW Navixy data directly (no engine processing)
+    import asyncio as _aio
+    raw_navixy = NavixyClient(NAVIXY_API_URL, DEFAULT_NAVIXY_HASH)
+    raw_navixy.reset_logs()
+
+    tk_raw = await raw_navixy.get_trackers(h)
+    all_trackers = tk_raw.get('list', []) if tk_raw.get('success') else []
+    tid_list = [t['id'] for t in all_trackers]
+
+    states_raw, mileage_raw, odo_raw, eh_raw = await _aio.gather(
+        raw_navixy.get_tracker_states_batch(tid_list, h),
+        raw_navixy.get_mileage(tid_list, f"{from_date} 00:00:00", f"{to_date} 23:59:59", h),
+        raw_navixy.get_counters(tid_list, "odometer", h),
+        raw_navixy.get_counters(tid_list, "engine_hours", h),
+    )
+
+    # Parse raw mileage
+    raw_period_mileage = {}
+    if mileage_raw.get('success'):
+        for ts, days in mileage_raw.get('result', {}).items():
+            total = sum(
+                (d.get('mileage', 0) if isinstance(d, dict) else 0)
+                for d in days.values() if d is not None
+            )
+            raw_period_mileage[ts] = round(total, 1)
+
+    raw_odo = odo_raw.get('value', {}) if odo_raw.get('success') else {}
+    raw_eh = eh_raw.get('value', {}) if eh_raw.get('success') else {}
+
+    # 3. Build comparison rows
+    engine_vehicles = {v['tracker_id']: v for v in engine_result.get('vehicles', [])}
+    comparison = []
+    mismatches = 0
+
+    for t in all_trackers:
+        tid = t['id']
+        ts = str(tid)
+        ev = engine_vehicles.get(tid, {})
+        state = states_raw.get(tid, {})
+
+        raw_mileage_val = raw_period_mileage.get(ts, 0)
+        raw_odo_val = raw_odo.get(ts) or 0
+        raw_eh_val = raw_eh.get(ts) or 0
+
+        eng_mileage = ev.get('mileage', 0)
+        eng_odo = ev.get('total_odometer', 0)
+        eng_eh = ev.get('engine_hours', 0)
+
+        mileage_match = abs(raw_mileage_val - eng_mileage) < 0.5
+        odo_match = abs(raw_odo_val - eng_odo) < 1
+        eh_match = abs(raw_eh_val - eng_eh) < 0.1
+
+        if not (mileage_match and odo_match and eh_match):
+            mismatches += 1
+
+        comparison.append({
+            "tracker_id": tid,
+            "label": t['label'],
+            "navixy_raw": {
+                "mileage": raw_mileage_val,
+                "odometer": round(raw_odo_val, 1),
+                "engine_hours": round(raw_eh_val, 1),
+                "connection_status": state.get('connection_status', 'unknown'),
+                "speed": state.get('gps', {}).get('speed', 0),
+            },
+            "engine_computed": {
+                "mileage": eng_mileage,
+                "odometer": round(eng_odo, 1),
+                "engine_hours": round(eng_eh, 1),
+                "connection_status": ev.get('connection_status', 'unknown'),
+                "speed": ev.get('speed', 0),
+            },
+            "validation": {
+                "mileage": mileage_match,
+                "odometer": odo_match,
+                "engine_hours": eh_match,
+                "all_match": mileage_match and odo_match and eh_match,
+            },
+        })
+
+    return {
+        "success": True,
+        "period": {"from": from_date, "to": to_date},
+        "tenant": tenant,
+        "total_vehicles": len(comparison),
+        "mismatches": mismatches,
+        "all_valid": mismatches == 0,
+        "vehicles": comparison,
+        "engine_audit": engine_result.get('_audit', {}),
+        "raw_navixy_calls": raw_navixy.get_logs(),
+    }
+
+# ============ PDF EXPORT ============
+
+@api_router.get("/export/pdf")
+async def export_pdf(
+    request: Request,
+    from_date: str = Query(..., description="YYYY-MM-DD"),
+    to_date: str = Query(..., description="YYYY-MM-DD"),
+):
+    """Generate a branded PDF report of fleet stats."""
+    h, tenant = await get_tenant_context(request)
+    stats = await engine.compute_fleet_stats(h, from_date, to_date, None, tenant)
+    comp = await engine.compute_vehicle_comparison(h, tenant)
+
+    client_info = await get_client_from_subdomain(request)
+    client_name = client_info.get('name', 'LOGITRAK') if client_info else 'LOGITRAK'
+
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import mm
+    from reportlab.lib import colors as rl_colors
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+
+    buf = io.BytesIO()
+    doc = SimpleDocTemplate(buf, pagesize=A4, leftMargin=15*mm, rightMargin=15*mm, topMargin=20*mm, bottomMargin=15*mm)
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle('CustomTitle', parent=styles['Title'], fontSize=18, spaceAfter=6)
+    sub_style = ParagraphStyle('Sub', parent=styles['Normal'], fontSize=9, textColor=rl_colors.gray)
+    h2_style = ParagraphStyle('H2', parent=styles['Heading2'], fontSize=12, spaceAfter=4, spaceBefore=12)
+
+    elements = []
+
+    # Title
+    elements.append(Paragraph(f"{client_name} — Rapport Flotte", title_style))
+    elements.append(Paragraph(f"Periode: {from_date} au {to_date} | Genere le {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M')} UTC", sub_style))
+    elements.append(Spacer(1, 8*mm))
+
+    # Summary KPIs
+    summary = stats.get('summary', {})
+    elements.append(Paragraph("Resume", h2_style))
+    kpi_data = [
+        ['Vehicules', 'Distance totale', 'Heures moteur'],
+        [str(summary.get('total_vehicles', 0)),
+         f"{summary.get('total_mileage', 0)} km",
+         f"{summary.get('total_engine_hours', 0)} h"],
+    ]
+    kpi_t = Table(kpi_data, colWidths=[60*mm, 60*mm, 60*mm])
+    kpi_t.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), rl_colors.Color(0.07, 0.07, 0.07)),
+        ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.white),
+        ('FONTSIZE', (0, 0), (-1, -1), 9),
+        ('ALIGN', (0, 0), (-1, -1), 'CENTER'),
+        ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.Color(0.85, 0.85, 0.85)),
+        ('TOPPADDING', (0, 0), (-1, -1), 6),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 6),
+    ]))
+    elements.append(kpi_t)
+    elements.append(Spacer(1, 6*mm))
+
+    # Vehicle table
+    elements.append(Paragraph("Detail par vehicule", h2_style))
+    header = ['Vehicule', 'Km', 'Odometre', 'Moteur (h)', 'Etat', 'Utilisation']
+    rows = [header]
+    comp_map = {v['tracker_id']: v for v in comp.get('vehicles', [])}
+    for v in stats.get('vehicles', []):
+        cv = comp_map.get(v['tracker_id'], {})
+        rows.append([
+            v['label'][:22],
+            f"{v['mileage']}",
+            f"{round(v['total_odometer'])}",
+            f"{round(v['engine_hours'])}",
+            v['connection_status'],
+            f"{cv.get('utilization_score', 0)}%",
+        ])
+
+    col_w = [55*mm, 22*mm, 28*mm, 25*mm, 22*mm, 28*mm]
+    tbl = Table(rows, colWidths=col_w, repeatRows=1)
+    tbl.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), rl_colors.Color(0.07, 0.07, 0.07)),
+        ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.white),
+        ('FONTSIZE', (0, 0), (-1, 0), 8),
+        ('FONTSIZE', (0, 1), (-1, -1), 7),
+        ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
+        ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.Color(0.85, 0.85, 0.85)),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [rl_colors.white, rl_colors.Color(0.97, 0.97, 0.97)]),
+        ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+    ]))
+    elements.append(tbl)
+
+    # Footer
+    elements.append(Spacer(1, 10*mm))
+    elements.append(Paragraph("Donnees 100% Navixy — Analytics Engine v1.0.0 — Aucune estimation", sub_style))
+
+    doc.build(elements)
+    buf.seek(0)
+
+    filename = f"rapport_flotte_{client_name}_{from_date}_{to_date}.pdf"
+    return StreamingResponse(
+        buf,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
 # ============ MOUNT ============
 
 app.include_router(api_router)

@@ -18,7 +18,7 @@ export const Sparkline = ({ data, color = "#111", height = 32, width = 80 }) => 
 };
 
 // ============ KPI CARD ============
-export const KPICard = ({ label, value, unit, icon: Icon, trend, trendLabel, sparkData, sparkColor, status, subtitle, explanation }) => {
+export const KPICard = ({ label, value, unit, icon: Icon, trend, trendLabel, sparkData, sparkColor, status, subtitle, explanation, debugInfo }) => {
   const [showExplanation, setShowExplanation] = useState(false);
   const TrendIcon = trend > 0 ? ArrowUpRight : trend < 0 ? ArrowDownRight : Minus;
   const trendColor = trend > 0 ? 'text-emerald-600' : trend < 0 ? 'text-red-500' : 'text-gray-400';
@@ -57,6 +57,18 @@ export const KPICard = ({ label, value, unit, icon: Icon, trend, trendLabel, spa
           </div>
           {sparkData && sparkData.length > 1 && <Sparkline data={sparkData} color={sparkColor || '#111'} />}
         </div>
+
+        {/* Debug overlay */}
+        {debugInfo && (
+          <div className="mt-2 pt-2 border-t border-dashed border-violet-200" data-testid="kpi-debug">
+            <div className="flex flex-wrap gap-x-3 gap-y-0.5 text-[9px] font-mono text-violet-600">
+              {debugInfo.source && <span>src: {debugInfo.source}</span>}
+              {debugInfo.responseTime != null && <span>{debugInfo.responseTime}ms</span>}
+              {debugInfo.cacheAge != null && <span>cache: {debugInfo.cacheAge}s</span>}
+              {debugInfo.field && <span>field: {debugInfo.field}</span>}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Explanation popup */}
