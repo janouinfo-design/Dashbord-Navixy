@@ -1,17 +1,15 @@
-import React from "react";
-import { KPICard, InsightCard, RiskCard, SectionHeader } from "@/components/shared/UIComponents";
-import { calcFleetSummary, generateInsights, calcFinancialRisk, FUEL_PRICE_CHF } from "@/lib/metrics";
+import React, { useState, useMemo } from "react";
+import { KPICard, InsightCard, SectionHeader } from "@/components/shared/UIComponents";
+import { calcFleetSummary, generateInsights } from "@/lib/metrics";
 import {
-  Gauge, Truck, MapPin, Fuel, DollarSign, Clock, AlertTriangle,
-  Activity, Zap, WifiOff, CheckCircle, ShieldAlert, Search, ChevronDown, ChevronUp, Navigation
+  Gauge, Truck, MapPin, AlertTriangle, Activity, Zap,
+  WifiOff, CheckCircle, Clock, Navigation
 } from "lucide-react";
-import { calcFuelCost, getScoreColor, getScoreBg } from "@/lib/metrics";
 import {
   AreaChart, Area, BarChart, Bar,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell
 } from "recharts";
-import { useState, useMemo } from "react";
 
 export const OverviewTab = ({ data }) => {
   const { stats, trends, comparison, idleGroups } = data;
@@ -20,44 +18,51 @@ export const OverviewTab = ({ data }) => {
   const trendData = trends?.trends || [];
 
   const summary = useMemo(() => calcFleetSummary(vehicles, compVehicles, trends), [vehicles, compVehicles, trends]);
-  const insights = useMemo(() => generateInsights(vehicles, compVehicles, trends), [vehicles, compVehicles, trends]);
-  const risk = useMemo(() => calcFinancialRisk(compVehicles, trends), [compVehicles, trends]);
+  const insights = useMemo(() => generateInsights(vehicles, compVehicles), [vehicles, compVehicles]);
 
-  const effSparkData = trendData.slice(-7).map(d => ({ v: d.avg_efficiency }));
-  const distSparkData = trendData.slice(-7).map(d => ({ v: d.total_distance }));
-  const fuelSparkData = trendData.slice(-7).map(d => ({ v: d.fuel_consumption }));
+  const distSparkData = trendData.slice(-7).map(d => ({ v: d.total_distance || 0 }));
 
   return (
     <div className="p-4 lg:p-8 space-y-8 max-w-[1600px] mx-auto" data-testid="overview-tab">
       {/* KPI Grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <KPICard label="Score Flotte" value={summary.fleetScore} unit="%" icon={Gauge}
+        <KPICard label="Utilisation Flotte" value={summary.fleetScore} unit="%" icon={Gauge}
           status={summary.fleetScore >= 60 ? 'good' : summary.fleetScore >= 40 ? 'warning' : 'danger'}
-          sparkData={effSparkData} sparkColor={summary.fleetScore >= 60 ? '#10B981' : '#EF4444'}
-          explanation={{ title: 'Score Flotte', description: 'Moyenne ponderee: Efficacite (30%) + Anti-ralenti (25%) + Securite (20%) + Eco-conduite (15%) + Activite (10%).', tip: '> 70% excellent, 40-70% acceptable, < 40% action requise.' }} />
+          explanation={{ title: 'Utilisation Flotte', description: 'Pourcentage moyen de jours actifs (avec km &gt; 0) sur les 7 derniers jours. Donnee 100% Navixy.', formula: '(jours_actifs / 7) × 100', tip: '&gt; 70% = bonne utilisation. &lt; 30% = vehicules potentiellement sous-exploites.' }} />
         <KPICard label="Vehicules connectes" value={`${summary.active}`} unit={`/ ${summary.total}`} icon={Truck}
-          status={summary.active > 0 ? 'good' : 'danger'} subtitle={`${summary.offline} offline`} />
+          status={summary.active > 0 ? 'good' : 'danger'} subtitle={`${summary.offline} hors ligne`} />
         <KPICard label="Distance parcourue" value={summary.totalKm.toFixed(0)} unit="km" icon={MapPin}
           sparkData={distSparkData} sparkColor="#111" />
-        <KPICard label="Alertes" value={summary.alertCount} icon={AlertTriangle}
-          status={summary.alertCount === 0 ? 'good' : summary.alertCount <= 5 ? 'warning' : 'danger'} subtitle={`${summary.violations} exces vitesse`} />
         <KPICard label="Temps moteur" value={summary.totalEngineH.toFixed(0)} unit="h" icon={Activity} />
-        <KPICard label="Vehicules actifs" value={summary.active} icon={Truck} status="good" />
+      </div>
+
+      {/* Data source banner */}
+      <div className="flex items-center gap-2 px-4 py-2.5 bg-gray-50 rounded-xl border border-gray-200">
+        <div className="w-2 h-2 rounded-full bg-emerald-500" />
+        <span className="text-[10px] text-gray-500">Toutes les donnees proviennent directement de l'API Navixy — aucune estimation.</span>
+        {stats?._audit && (
+          <span className="text-[10px] text-gray-400 ml-auto">
+            Engine v{stats._audit.engine_version} | {stats._audit.navixy_calls?.length || 0} appels API
+            {stats._audit.cache?.hit && ` | Cache ${stats._audit.cache.age_seconds}s`}
+          </span>
+        )}
       </div>
 
       {/* Insights */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6" data-testid="insights">
-        <SectionHeader icon={Zap} title="Insights Intelligents" count={insights.length} />
-        <div className="space-y-2.5">
-          {insights.map((ins, idx) => {
-            const iconMap = { AlertTriangle, WifiOff, Clock, Fuel, ShieldAlert, Truck, CheckCircle };
-            return <InsightCard key={idx} {...ins} icon={iconMap[ins.icon] || AlertTriangle} />;
-          })}
+      {insights.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-6" data-testid="insights">
+          <SectionHeader icon={Zap} title="Insights" count={insights.length} />
+          <div className="space-y-2.5">
+            {insights.map((ins, idx) => {
+              const iconMap = { AlertTriangle, WifiOff, Clock, Truck, CheckCircle };
+              return <InsightCard key={idx} {...ins} icon={iconMap[ins.icon] || AlertTriangle} />;
+            })}
+          </div>
         </div>
-      </div>
+      )}
 
       {/* Idle by Group (Engins) */}
-      {idleGroups && idleGroups.groups.length > 0 && (
+      {idleGroups && idleGroups.groups && idleGroups.groups.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 p-6" data-testid="idle-by-group">
           <SectionHeader icon={Clock} title="Ralenti Engins de Chantier" iconBg="bg-amber-100" iconColor="text-amber-600" count={`${idleGroups.total_engins} engins`} />
           <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
@@ -78,7 +83,7 @@ export const OverviewTab = ({ data }) => {
                     <div className="h-full bg-emerald-400" style={{ width: `${(group.active / Math.max(1, group.total)) * 100}%` }} />
                     <div className="h-full bg-amber-400" style={{ width: `${(group.idle / Math.max(1, group.total)) * 100}%` }} />
                   </div>
-                  <div className="text-[9px] text-gray-400 mt-1">Ralenti: {group.idle_percentage}% | ~{Math.round(group.idle * 3)} CHF/h</div>
+                  <div className="text-[9px] text-gray-400 mt-1">Ralenti: {group.idle_percentage}%</div>
                 </div>
               );
             })}
@@ -86,44 +91,46 @@ export const OverviewTab = ({ data }) => {
         </div>
       )}
 
-      {/* Classement vehicules */}
+      {/* Charts */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Chart: evolution score */}
+        {/* Distance quotidienne */}
         <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h4 className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-4">Evolution Score</h4>
+          <h4 className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-4">Distance Quotidienne (7j)</h4>
           <ResponsiveContainer width="100%" height={200}>
-            <AreaChart data={trendData}>
+            <BarChart data={trendData} barSize={16}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
               <XAxis dataKey="day_name" tick={{ fontSize: 10, fill: '#8A8A8E' }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 10, fill: '#8A8A8E' }} domain={[0, 100]} axisLine={false} tickLine={false} width={30} />
-              <Tooltip contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: 11 }} />
-              <Area type="monotone" dataKey="avg_efficiency" stroke="#111" fill="#f3f4f6" strokeWidth={2} />
-            </AreaChart>
-          </ResponsiveContainer>
-        </div>
-
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h4 className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-4">Distance & Carburant (7j)</h4>
-          <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={trendData} barSize={14}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
-              <XAxis dataKey="day_name" tick={{ fontSize: 10, fill: '#8A8A8E' }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 10, fill: '#8A8A8E' }} axisLine={false} tickLine={false} width={35} />
-              <Tooltip contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: 11 }} />
-              <Bar dataKey="total_distance" name="Distance (km)" fill="#111" radius={[3, 3, 0, 0]} />
-              <Bar dataKey="fuel_consumption" name="Carburant (L)" fill="#F59E0B" radius={[3, 3, 0, 0]} />
+              <YAxis tick={{ fontSize: 10, fill: '#8A8A8E' }} axisLine={false} tickLine={false} width={40} unit=" km" />
+              <Tooltip contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: 11 }} formatter={(v) => [`${v} km`, 'Distance']} />
+              <Bar dataKey="total_distance" name="Distance (km)" fill="#111" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
 
+        {/* Vehicules actifs par jour */}
         <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h4 className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-4">Repartition Scores</h4>
+          <h4 className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-4">Vehicules Actifs / Jour</h4>
+          <ResponsiveContainer width="100%" height={200}>
+            <AreaChart data={trendData}>
+              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+              <XAxis dataKey="day_name" tick={{ fontSize: 10, fill: '#8A8A8E' }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fontSize: 10, fill: '#8A8A8E' }} axisLine={false} tickLine={false} width={30} />
+              <Tooltip contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: 11 }} />
+              <Area type="monotone" dataKey="active_vehicles" stroke="#10B981" fill="#d1fae5" strokeWidth={2} name="Vehicules actifs" />
+            </AreaChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* Repartition Utilisation */}
+        <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <h4 className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-4">Repartition Utilisation</h4>
           {(() => {
             const d = [
-              { name: '>70%', value: compVehicles.filter(v => v.efficiency_score >= 70).length, color: '#10B981' },
-              { name: '40-70%', value: compVehicles.filter(v => v.efficiency_score >= 40 && v.efficiency_score < 70).length, color: '#F59E0B' },
-              { name: '<40%', value: compVehicles.filter(v => v.efficiency_score < 40).length, color: '#EF4444' },
+              { name: '>70%', value: compVehicles.filter(v => (v.utilization_score || 0) >= 70).length, color: '#10B981' },
+              { name: '30-70%', value: compVehicles.filter(v => (v.utilization_score || 0) >= 30 && (v.utilization_score || 0) < 70).length, color: '#F59E0B' },
+              { name: '<30%', value: compVehicles.filter(v => (v.utilization_score || 0) < 30).length, color: '#EF4444' },
             ].filter(x => x.value > 0);
+            if (d.length === 0) d.push({ name: 'Aucun', value: 1, color: '#d1d5db' });
             return (
               <div className="flex items-center gap-4">
                 <div className="w-28 h-28 flex-shrink-0">

@@ -1,0 +1,55 @@
+{
+  "summary": "Backend + Frontend testing of refactored Phase 1 Analytics Engine (v1.0.0). Backend refactored into 4 modules; all 10 backend pytest tests pass. Frontend all 6 dashboard tabs render real Navixy data correctly with audit banner, null-field handling (N/A), and fuel-config prompt.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "PUT /api/config/fuel", "issue": "Cannot reset a field (e.g. default_consumption_rate) to null via PUT because the handler ignores None values. Only way to clear is direct DB manipulation."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "Overview / Performance / Costs (Recharts)", "issues": ["Console warnings 'The width(-1) and height(-1) of chart should be greater than 0' from ResponsiveContainer at initial mount - cosmetic, charts still render"]}
+    ]
+  },
+  "passed_tests": [
+    "GET /api/ returns engine_version 1.0.0",
+    "GET /api/fleet/stats returns _audit with engine_version, navixy_calls, data_quality + real vehicles",
+    "GET /api/analytics/trends returns per-day total_distance & active_vehicles (real); avg_efficiency/total_driving_time/total_idle_time/speed_violations all null",
+    "GET /api/analytics/vehicle-comparison returns utilization_score + total_distance_week (real); fuel_efficiency/idle_percentage/violations_count null",
+    "GET /api/fleet/efficiency returns utilization_pct (real); driving_time/idle_time/stopped_time null",
+    "GET /api/config/fuel returns default_fuel_price=2.0, default_consumption_rate=null",
+    "PUT /api/config/fuel {default_consumption_rate:8.5} → subsequent /api/fleet/stats include fuel_used_liters + fuel_cost_chf on vehicles with distance",
+    "GET /api/fleet/idle-by-group returns _audit",
+    "GET /api/reports/driver returns drivers with real distance data (no journal errors)",
+    "Frontend Overview: UTILISATION FLOTTE 32%, VEHICULES CONNECTES 2/12, DISTANCE 3987km, TEMPS MOTEUR 2218h with data source banner 'Toutes les donnees proviennent directement de l\\'API Navixy — aucune estimation | Engine v1.0.0'",
+    "Frontend Performance: utilization scores + Top 10 by distance",
+    "Frontend Vehicles: UTILISATION column shown with % per vehicle",
+    "Frontend Efficiency: utilization % bars per vehicle with active_days/total_days (e.g. 5/7j | 762 km)",
+    "Frontend Costs: 'Configuration carburant requise' prompt shown when no consumption rate configured, CARBURANT/COUT MENSUEL display N/A",
+    "Frontend Drivers: driver list with utilization-based scores (Ivan 71, Orhan 57)"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Optional: consider supporting explicit null reset in PUT /api/config/fuel (e.g. treat explicit null via sentinel or a separate DELETE endpoint) so config can be cleared through API",
+    "Optional: fix Recharts ResponsiveContainer(-1) warnings by giving containers explicit minHeight/minWidth"
+  ],
+  "critical_code_review_comments": [
+    "analytics_engine.py is 718 lines — consider splitting into per-KPI modules (>700 line threshold)",
+    "server.py fuel PUT handler drops None values, preventing config reset — surface via API for admin ops",
+    "backend/tests/backend_test.py directly manipulates mongo tenant_config to reset state — indicates missing admin reset endpoint"
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py"
+  ],
+  "success_rate": {"backend": "100% (10/10)", "frontend": "100% (6/6 tabs)"},
+  "test_credentials": "None required. NAVIXY_HASH pre-configured in backend .env.",
+  "seed_data_creation": "None — live Navixy API data. Fixture resets tenant_config collection before/after test module.",
+  "retest_needed": false,
+  "should_main_agent_self_test": false,
+  "context_for_next_testing_agent": "Engine v1.0.0 confirmed working. Backend pytest suite at /app/backend/tests/backend_test.py can be re-run any time (module-scoped fixture cleans mongo tenant_config for tenant='default' before/after). Trends endpoint uses field names total_distance/total_driving_time/total_idle_time (not distance/driving_time/idle_time). Navixy API is slow (7-15s per aggregated call) — allow generous timeouts. Recharts dimension warnings are cosmetic only."
+}
