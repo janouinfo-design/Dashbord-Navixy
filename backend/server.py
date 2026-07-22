@@ -503,7 +503,7 @@ async def audit_compare(
 
     # 2. Get RAW Navixy data directly (no engine processing)
     import asyncio as _aio
-    raw_navixy = NavixyClient(NAVIXY_API_URL, DEFAULT_NAVIXY_HASH)
+    raw_navixy = NavixyClient(NAVIXY_API_URL, h)
     raw_navixy.reset_logs()
 
     tk_raw = await raw_navixy.get_trackers(h)
