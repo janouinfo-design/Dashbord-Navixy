@@ -218,17 +218,19 @@ async def get_fuel_config(request: Request):
 async def update_fuel_config(request: Request, body: FuelConfigUpdate):
     _, tenant = await get_tenant_context(request)
     current = await engine.get_fuel_config(tenant)
-    if body.default_fuel_price is not None:
-        current['default_fuel_price'] = body.default_fuel_price
-    if body.currency is not None:
-        current['currency'] = body.currency
-    if body.default_consumption_rate is not None:
-        current['default_consumption_rate'] = body.default_consumption_rate
-    if body.fuel_types is not None:
-        current['fuel_types'] = body.fuel_types
+    update = body.model_dump(exclude_unset=True)
+    for key, val in update.items():
+        current[key] = val
     await engine.set_fuel_config(tenant, current)
     cache.invalidate_tenant(tenant)
     return {"success": True, "fuel_config": current}
+
+@api_router.delete("/config/fuel")
+async def reset_fuel_config(request: Request):
+    _, tenant = await get_tenant_context(request)
+    await engine.set_fuel_config(tenant, {"default_fuel_price": 2.0, "currency": "CHF", "default_consumption_rate": None, "fuel_types": {"diesel": 2.0, "essence": 2.1, "electric_kwh": 0.25}})
+    cache.invalidate_tenant(tenant)
+    return {"success": True, "message": "Fuel config reset to defaults"}
 
 # ============ TRACKERS (passthrough) ============
 

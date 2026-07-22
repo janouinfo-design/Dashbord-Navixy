@@ -164,7 +164,7 @@ class AnalyticsEngine:
         # Fuel config
         fuel_cfg = await self.get_fuel_config(tenant)
         rate = fuel_cfg.get('default_consumption_rate')
-        price = fuel_cfg.get('default_fuel_price', 2.0)
+        price = fuel_cfg.get('default_fuel_price') or 2.0
 
         if rate:
             audit.computed("fuel_cost", "(mileage/100) × rate × price", {"rate": rate, "price": price})
@@ -381,7 +381,7 @@ class AnalyticsEngine:
         # Fuel config
         fuel_cfg = await self.get_fuel_config(tenant)
         rate = fuel_cfg.get('default_consumption_rate')
-        price = fuel_cfg.get('default_fuel_price', 2.0)
+        price = fuel_cfg.get('default_fuel_price') or 2.0
         if rate:
             audit.computed("fuel_consumption", "(distance/100) × rate", {"rate": rate})
         else:
