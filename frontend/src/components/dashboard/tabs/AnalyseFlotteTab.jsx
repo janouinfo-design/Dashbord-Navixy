@@ -12,7 +12,7 @@ import {
 
 // ═══ CATEGORIES — single source of truth ═══
 const CATEGORIES = [
-  { id: "inactif", label: "Inactif", color: "#9CA3AF", bg: "bg-gray-400", text: "text-gray-600", border: "border-gray-300", seuil: "0%", def: "Aucun jour d'activite sur la periode" },
+  { id: "inactif", label: "Sans activite", color: "#9CA3AF", bg: "bg-gray-400", text: "text-gray-600", border: "border-gray-300", seuil: "0%", def: "Aucun jour d'activite sur la periode" },
   { id: "sous_utilise", label: "Sous-utilise", color: "#EF4444", bg: "bg-red-500", text: "text-red-600", border: "border-red-300", seuil: "< 30%", def: "Moins de 30% des jours avec activite" },
   { id: "modere", label: "Modere", color: "#F59E0B", bg: "bg-amber-500", text: "text-amber-600", border: "border-amber-300", seuil: "30–59%", def: "Activite entre 30% et 59% de la periode" },
   { id: "bonne", label: "Bonne utilisation", color: "#10B981", bg: "bg-emerald-500", text: "text-emerald-600", border: "border-emerald-300", seuil: "60–84%", def: "Activite reguliere sur 60% a 84% de la periode" },
@@ -22,6 +22,8 @@ const CAT_MAP = Object.fromEntries(CATEGORIES.map(c => [c.id, c]));
 const USED_CATS = CATEGORIES.filter(c => c.id !== 'inactif');
 const utilBarColor = (p) => p <= 0 ? '#d1d5db' : p < 30 ? '#EF4444' : p < 60 ? '#F59E0B' : p < 85 ? '#10B981' : '#3B82F6';
 const utilTextCls = (p) => p <= 0 ? 'text-gray-400' : p < 30 ? 'text-red-600' : p < 60 ? 'text-amber-600' : p < 85 ? 'text-emerald-600' : 'text-blue-600';
+const DN_FULL = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
+const MOIS = ['janvier', 'fevrier', 'mars', 'avril', 'mai', 'juin', 'juillet', 'aout', 'septembre', 'octobre', 'novembre', 'decembre'];
 
 // ═══ Tooltip helper ═══
 const Tip = ({ label, def, children }) => {
@@ -128,7 +130,7 @@ export const AnalyseFlotteTab = ({ data }) => {
   const setDay = (day) => { setFilters(f => ({ ...f, day: f.day === day ? null : day, category: 'all' })); scrollToTable(); };
   const setSearch = (s) => setFilters(f => ({ ...f, search: s }));
   const clearDayFilter = () => setFilters(f => ({ ...f, day: null }));
-  const toggleSort = (col) => setFilters(f => f.sortBy === col ? { ...f, sortDir: f.sortDir === 'asc' ? 'desc' : 'asc' } : { ...f, sortBy: col, sortDir: col === 'utilization_pct' ? 'asc' : 'desc' });
+  const toggleSort = (col) => setFilters(f => f.sortBy === col ? { ...f, sortDir: f.sortDir === 'asc' ? 'desc' : 'asc' } : { ...f, sortBy: col, sortDir: (col === 'utilization_pct' || col === 'label') ? 'asc' : 'desc' });
   const scrollToTable = () => setTimeout(() => tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
 
   const effData = efficiency || {};
@@ -218,8 +220,10 @@ export const AnalyseFlotteTab = ({ data }) => {
       list.push({ text: `${analytics.inactive} vehicule${analytics.inactive > 1 ? 's' : ''} sans aucune activite sur ${period.days || 7} jours`, action: () => setCategory('inactif') });
     if (analytics.topV && analytics.topShare >= 25)
       list.push({ text: `${analytics.topV.label} represente ${analytics.topShare}% de la distance totale`, action: () => setSelectedVehicle(vehicles.find(v => v.tracker_id === analytics.topV?.tracker_id)) });
-    if (bestDays.length > 0 && bestDays[0].active > 1)
-      list.push({ text: `${bestDays.map(d => d.day_name).join(' et ')} : meilleur${bestDays.length > 1 ? 's' : ''} jour${bestDays.length > 1 ? 's' : ''} (${bestDays[0].active}/${analytics.totalV} vehicules)`, action: () => setDay(bestDays[0].date) });
+    if (bestDays.length > 0 && bestDays[0].active > 1) {
+      const bestNames = bestDays.map(d => { const dt = new Date(d.date + 'T00:00:00'); return ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'][dt.getDay()]; });
+      list.push({ text: `${bestNames.join(' et ')} : meilleur${bestDays.length > 1 ? 's' : ''} jour${bestDays.length > 1 ? 's' : ''} (${bestDays[0].active}/${analytics.totalV} vehicules)`, action: () => setDay(bestDays[0].date) });
+    }
     if (analytics.withEh < analytics.totalV && analytics.withEh > 0)
       list.push({ text: `Donnees moteur disponibles pour ${analytics.withEh}/${analytics.totalV} vehicules`, action: null });
     return list.slice(0, 4);
@@ -229,7 +233,7 @@ export const AnalyseFlotteTab = ({ data }) => {
   const isActive = (cat) => filters.category === cat && !filters.day;
 
   const dn = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
-  const dayLabel = filters.day ? (() => { const d = new Date(filters.day + 'T00:00:00'); return `${dn[d.getDay()]} ${d.getDate()}/${d.getMonth() + 1}`; })() : null;
+  const dayLabel = filters.day ? (() => { const d = new Date(filters.day + 'T00:00:00'); return `${DN_FULL[d.getDay()]} ${d.getDate()} ${MOIS[d.getMonth()]}`; })() : null;
 
   return (
     <div className="p-4 lg:p-8 space-y-5 max-w-[1600px] mx-auto" data-testid="analyse-flotte-tab">
@@ -318,14 +322,14 @@ export const AnalyseFlotteTab = ({ data }) => {
             <h4 className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Activite quotidienne</h4>
             <Tip label="Calcul" def={`Nombre de vehicules ayant enregistre >= ${threshold} km chaque jour, sur ${analytics.totalV} vehicules au total.`}><span /></Tip>
           </div>
-          <ResponsiveContainer width="100%" height={220}>
+          <ResponsiveContainer width="100%" height={260}>
             <BarChart data={chartData} barSize={32} onClick={(e) => { if (e?.activePayload?.[0]) setDay(e.activePayload[0].payload.date); }}>
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
-              <XAxis dataKey="day_name" tick={{ fontSize: 10, fill: '#5E5E62' }} axisLine={false} tickLine={false} />
+              <XAxis dataKey="date" tick={{ fontSize: 10, fill: '#5E5E62' }} axisLine={false} tickLine={false} tickFormatter={v => { const d = new Date(v + 'T00:00:00'); return ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'][d.getDay()]; }} />
               <YAxis tick={{ fontSize: 10, fill: '#8A8A8E' }} axisLine={false} tickLine={false} width={25} domain={[0, 'auto']} allowDecimals={false} />
               <RTooltip contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: 11 }}
                 formatter={(v, n, p) => [`${p.payload.active}/${p.payload.total} vehicules (${p.payload.pct}%)${p.payload.km ? ` — ${Math.round(p.payload.km)} km` : ''}`, '']}
-                labelFormatter={(v, payload) => payload?.[0]?.payload?.date || v} />
+                labelFormatter={(v, payload) => { const ds = payload?.[0]?.payload?.date; if (ds) { const dt = new Date(ds + 'T00:00:00'); return `${DN_FULL[dt.getDay()]} ${dt.getDate()} ${MOIS[dt.getMonth()]}`; } return v; }} />
               <ReferenceLine y={chartData.reduce((s, d) => s + d.active, 0) / (chartData.length || 1)} stroke="#999" strokeDasharray="4 4" strokeWidth={1} />
               <Bar dataKey="active" radius={[4, 4, 0, 0]} cursor="pointer">
                 {chartData.map((d, i) => (
@@ -390,16 +394,16 @@ export const AnalyseFlotteTab = ({ data }) => {
           {[
             { id: 'all', label: 'Tous', count: vehicles.length },
             { id: 'used', label: 'Utilises', count: analytics.used },
-            { id: 'inactif', label: 'Inactif', count: analytics.inactive },
+            { id: 'inactif', label: 'Sans activite', count: analytics.inactive },
             { id: 'sous_utilise', label: 'Sous-utilise', count: catCounts.sous_utilise || 0 },
             { id: 'modere', label: 'Modere', count: catCounts.modere || 0 },
             { id: 'bonne', label: 'Bonne utilisation', count: catCounts.bonne || 0 },
             { id: 'tres_utilise', label: 'Forte utilisation', count: catCounts.tres_utilise || 0 },
-          ].filter(f => f.count > 0 || f.id === 'all').map(f => (
-            <button key={f.id} onClick={() => { setFilters(prev => ({ ...prev, category: prev.category === f.id ? 'all' : f.id, day: null })); }}
+          ].map(f => (
+            <button key={f.id} onClick={() => { if (f.count > 0 || f.id === 'all') setFilters(prev => ({ ...prev, category: prev.category === f.id ? 'all' : f.id, day: null })); }}
               data-testid={`analyse-filter-${f.id}`}
               className={`px-3 py-2 text-xs font-medium rounded-lg border transition-colors ${
-                isActive(f.id) ? 'bg-[#111] text-white border-[#111]' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
+                isActive(f.id) ? 'bg-[#111] text-white border-[#111]' : f.count === 0 && f.id !== 'all' ? 'bg-gray-50 text-gray-300 border-gray-100 cursor-default' : 'bg-white text-gray-600 border-gray-200 hover:bg-gray-50'}`}>
               {f.label} ({f.count})
             </button>
           ))}
@@ -421,10 +425,10 @@ export const AnalyseFlotteTab = ({ data }) => {
                   { col: 'active_days', label: 'Jours actifs' },
                   { col: 'period_mileage', label: 'Distance' },
                   { col: 'km_per_active_day', label: 'km/jour actif' },
-                  { col: 'engine_hours', label: 'Moteur (total)' },
+                  { col: 'engine_hours', label: 'Moteur (total)', tip: 'Compteur cumulatif total du moteur. Non limite a la periode selectionnee. Donnee Navixy brute.' },
                 ].map(h => (
                   <th key={h.col} onClick={() => toggleSort(h.col)} className={`px-3 py-2.5 text-left text-[10px] font-medium uppercase tracking-wider text-gray-400 cursor-pointer hover:text-gray-600 select-none ${h.cls || ''}`}>
-                    <span className="flex items-center gap-1">{h.label}{filters.sortBy === h.col && (filters.sortDir === 'asc' ? <ChevronUp size={10} /> : <ChevronDown size={10} />)}</span>
+                    <span className="flex items-center gap-1">{h.tip ? <Tip label={h.label} def={h.tip}><span>{h.label}</span></Tip> : h.label}{filters.sortBy === h.col && (filters.sortDir === 'asc' ? <ChevronUp size={10} /> : <ChevronDown size={10} />)}</span>
                   </th>
                 ))}
                 <th className="px-3 py-2.5 text-left text-[10px] font-medium uppercase tracking-wider text-gray-400">
@@ -452,7 +456,7 @@ export const AnalyseFlotteTab = ({ data }) => {
                       <td className="px-3 py-2.5 text-xs font-medium text-gray-700 tabular-nums">{v.period_mileage} km</td>
                       <td className="px-3 py-2.5 text-xs text-gray-500 tabular-nums">{v.km_per_active_day > 0 ? v.km_per_active_day : '—'}</td>
                       <td className="px-3 py-2.5 text-xs text-gray-500 tabular-nums">
-                        {(v.engine_hours || 0) > 0 ? v.engine_hours : <Tip label="Moteur" def="Donnee non disponible pour ce vehicule"><span className="text-gray-300">—</span></Tip>}
+                        {(v.engine_hours || 0) > 0 ? `${v.engine_hours} h` : <Tip label="Moteur" def="Donnee non disponible pour ce vehicule"><span className="text-gray-300">—</span></Tip>}
                       </td>
                       <td className="px-3 py-2.5"><span className={`text-xs font-medium ${ecart > 0 ? 'text-emerald-600' : ecart < 0 ? 'text-red-500' : 'text-gray-400'}`}>{ecart > 0 ? '+' : ''}{ecart} pts</span></td>
                       <td className="px-3 py-2.5"><span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border ${cat.text} ${cat.border}`}><span className={`w-1.5 h-1.5 rounded-full ${cat.bg}`} />{cat.label}</span></td>

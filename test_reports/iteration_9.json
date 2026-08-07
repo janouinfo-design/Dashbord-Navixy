@@ -1,0 +1,35 @@
+{
+  "summary": "Full backend + frontend validation of the Analyse Flotte page after the latest label/UX polish. Backend invariants verified with 3 date ranges: (a) 2026-02-01..07 (7 days), (b) 2026-02-07 only (1 day), (c) 2026-01-08..02-07 (31 days). For every range: used+inactive==total, sum(categories)==total, sum(non-inactif)==used, and period.days matches expected. Trends endpoint returns exactly 7 daily entries with active_vehicles + total_distance. Frontend on live URL: 6 tabs present (overview/analyse/drivers/vehicles/costs/iot), tab-performance and tab-efficiency are gone. Analyse flotte renders '12 vehicules', '5 utilises' + '7 sans activite' buttons, 4 category KPI cards (Sous-utilise=2, Modere=0, Bonne=2, Forte=1) plus Km moy/utilise=606 km. Label consistency confirmed: page contains 'Sans activite' and NO 'Inactif' anywhere. All 7 filter buttons render including 'Modere (0)' which is dimmed (cursor-default class) and clicking it does not change the filter (rows stayed 12->12). Filter row-count vs KPI-count matches perfectly for used(5), inactif(7), sous_utilise(2), bonne(2), tres_utilise(1). Cat-bar segments filter (cat-bar-inactif -> 7 rows). Chart shows French day names Lun/Mar/Mer/Jeu/Ven/Sam/Dim; clicking a bar/day-button opens black banner 'Filtre actif : Dimanche 2 aout — 1 vehicule' with 'Reinitialiser' button which correctly removes the filter. Distance column sort toggles correctly (default '0 km' rows -> desc 937.3/881.5/838.6 -> asc 0 km). Search 'Iphone' narrows table from 12 -> 1 row. Engine hours cells contain values like '55.8 h', '292.9 h' or '—' for missing data; NO '0 h' anywhere. Drawer opens on row click and closes on Escape. 'A retenir' shows 4 insights. Period change to 'Aujourd'hui' recalculates the whole page (5 forte, 99 km moy). Regression: overview/drivers/vehicles/costs/iot all navigate without error.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_analyse_flotte_invariants.py",
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/iter9_invariants.xml"
+  ],
+  "action_items": [
+    "MINOR / HTML validity: The kpi-cat-* buttons contain a <Tip> component that renders its own <button> (info icon). React logs a hydration warning: '<button> cannot be a descendant of <button>'. Not blocking any functionality but should be fixed for accessibility/HTML compliance -- render the Tip trigger as <span role=\"button\"> or move the Tip outside the KPI card button, or make the outer element a <div> with onClick.",
+    "MINOR / Recharts warning: When Vehicules/IoT tabs mount, Recharts warns 'width(-1) and height(-1) should be greater than 0'. Suggest setting an explicit minHeight on ResponsiveContainer parents or delay chart mount until layout is measured."
+  ],
+  "critical_code_review_comments": [
+    "AnalyseFlotteTab.jsx L263 button > Tip > button nesting produces invalid HTML (hydration warning). Convert Tip's inner trigger to a non-button (span with tabIndex/role='button') when used inside another button, or move info tooltip outside the KPI-card button.",
+    "AnalyseFlotteTab.jsx sort compare still uses `va > vb ? 1 : -1` (returns -1 on equality). Use numeric subtraction / localeCompare for stability -- carried over from iteration 8."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_analyse_flotte_invariants.py"
+  ],
+  "success_rate": {
+    "backend": "100% (4/4 invariant tests + previous suite)",
+    "frontend": "100% (all requested UI behaviours verified)"
+  },
+  "seed_data_creation": "None -- live Navixy data (12 vehicles).",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "None. NAVIXY_HASH pre-configured in backend/.env.",
+  "context_for_next_testing_agent": "Analyse Flotte fusion is fully validated in iteration 9. Every requested invariant holds: (a) used+inactive==total, sum(cats)==total, sum(non-inactif)==used across 1/7/31 day ranges; (b) trends returns 7 daily items with active_vehicles+total_distance; (c) UI labels are all 'Sans activite' (no 'Inactif' anywhere); (d) all 7 filter buttons render, 0-count buttons (Modere) are visibly dimmed with cursor-default and click does nothing; (e) KPI card counts == filtered table row counts for every category; (f) chart shows all 7 French short day names and clicking a bar shows 'Filtre actif : <FullDay> <D> <mois> - N vehicule(s)' banner with working Reinitialiser; (g) engine cell shows 'X h' or '-' but never '0 h'; (h) sort toggles correctly on Distance; (i) drawer opens on row click and closes on Escape; (j) period change recalculates all sections. Two non-blocking action items reported: nested <button> in KPI Tip (HTML validity) and Recharts width warning on Vehicules/IoT tabs.",
+  "rca_of_the_issue": "N/A -- no defects reproduced. Two low-severity findings were reported (invalid <button> nesting via Tip inside kpi-cat buttons; Recharts responsive container warning) but they do not affect any tested user flow."
+}
