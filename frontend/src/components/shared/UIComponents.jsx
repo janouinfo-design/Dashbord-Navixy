@@ -1,6 +1,6 @@
 import { useState } from "react";
 import {
-  ArrowUpRight, ArrowDownRight, Minus, X, Info
+  ArrowUpRight, ArrowDownRight, Minus, X, Info, ChevronRight
 } from "lucide-react";
 import { LineChart, Line, ResponsiveContainer } from "recharts";
 import { getScoreBg } from "@/lib/metrics";
@@ -158,25 +158,25 @@ export const StatusBadge = ({ status }) => {
 };
 
 // ============ INSIGHT CARD ============
-export const InsightCard = ({ type, icon: Icon, title, detail, impact, action }) => {
+export const InsightCard = ({ type, icon: Icon, title, detail, onClick }) => {
   const styles = {
-    danger: 'bg-red-50 border-red-100', warning: 'bg-amber-50 border-amber-100',
-    info: 'bg-blue-50 border-blue-100', success: 'bg-emerald-50 border-emerald-100'
+    danger: 'bg-red-50 border-red-100 hover:border-red-200',
+    warning: 'bg-amber-50 border-amber-100 hover:border-amber-200',
+    info: 'bg-blue-50 border-blue-100 hover:border-blue-200',
+    success: 'bg-emerald-50 border-emerald-100 hover:border-emerald-200'
   };
-  const ic = {
-    danger: 'text-red-500', warning: 'text-amber-500',
-    info: 'text-blue-500', success: 'text-emerald-500'
-  };
+  const ic = { danger: 'text-red-500', warning: 'text-amber-500', info: 'text-blue-500', success: 'text-emerald-500' };
 
   return (
-    <div className={`insight-item flex gap-3 p-3.5 rounded-xl border ${styles[type]}`} style={{ opacity: 0 }}>
-      <Icon size={16} className={`mt-0.5 flex-shrink-0 ${ic[type]}`} />
+    <div onClick={onClick}
+      className={`insight-item flex items-center gap-3 p-3.5 rounded-xl border cursor-pointer transition-all ${styles[type]}`}
+      style={{ opacity: 0 }}>
+      <Icon size={16} className={`flex-shrink-0 ${ic[type]}`} />
       <div className="min-w-0 flex-1">
         <div className="text-sm font-medium text-gray-800">{title}</div>
-        <div className="text-xs text-gray-500 mt-0.5">{detail}</div>
-        {impact && <div className="text-xs font-semibold text-red-600 mt-1">Impact: ~{impact} CHF/mois</div>}
-        {action && <div className="text-[10px] text-blue-600 mt-1 font-medium">{action}</div>}
+        {detail && <div className="text-xs text-gray-500 mt-0.5">{detail}</div>}
       </div>
+      <ChevronRight size={15} className="text-gray-300 flex-shrink-0" />
     </div>
   );
 };
