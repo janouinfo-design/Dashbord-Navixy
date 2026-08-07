@@ -1,0 +1,27 @@
+{
+  "summary": "Frontend-only regression of the fully-rebuilt Vue generale tab (OverviewTab.jsx). All 3 rows render with correct data-testids. Data coherence verified across panels (categories + inactive sum to total, active% + inactive% = 100%). Period change 7j -> 30j works and refreshes all metrics + eco panel. Cross-tab navigation from kpi-cat-*, link-vehicles and link-drivers works. Regression on Analyse flotte, Conducteurs, Vehicules, Couts, IoT tabs: all load without console errors or blank screens. No forbidden fabricated metrics ($, TCO, satisfaction, risque d'usure) detected.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "OverviewTab / dashboard header", "issues": ["Header shows '0 actifs' while KPI card shows 'Flotte active 5/12'. Both are technically correct (currently-moving vs. active-over-period) but the wording collision may confuse users — consider clarifying the header label."]}
+    ]
+  },
+  "test_report_links": [],
+  "action_items": [
+    "Non-blocking: recharts warning 'width(-1) height(-1)' briefly logged when switching to Analyse flotte — caused by a ResponsiveContainer being mounted with 0-size parent during tab transition. Consider gating charts behind an isVisible check or setting minWidth/minHeight.",
+    "Cosmetic: consider clarifying header 'X actifs' vs card 'Flotte active X/Y' to avoid ambiguity."
+  ],
+  "critical_code_review_comments": [
+    "OverviewTab.jsx line 86-88: fuel aggregation logic uses reduce with a ternary but the initial accumulator is 0 — if all vehicles have fuel_used_liters === null, fuelL stays 0 but fuelAvailable also stays false, which is correctly handled. OK.",
+    "Anomaly 'offline' currently fires for every vehicle whose connection_status !== 'active'. In current live data 12/12 are 'hors ligne'. Verify that Navixy connection_status semantics match business intent (may be 'idle' vs 'moving' vs 'offline')."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "n/a", "frontend": "100%"},
+  "seed_data_creation": "None",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "context_for_next_testing_agent": "OverviewTab v2 fully covered: KPI band, panels, anomalies, eco (cached=fast, cold=~27s), period switch, cross-tab navigation, regression on all other tabs. Live fleet: 12 vehicles, 5 used, 7 inactive on 7d; on 30d fuel = 1310.3 L / 2621 CHF; eco drivers Orhan (3 stars/56) & Ivan (1 star/9).",
+  "rca_of_the_issue": "N/A — no defects blocking."
+}

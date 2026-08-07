@@ -1,527 +1,439 @@
-import React, { useState, useMemo } from "react";
-import { KPICard, InsightCard, SectionHeader } from "@/components/shared/UIComponents";
-import { DashboardDetailDrawer } from "@/components/shared/DashboardDetailDrawer";
+import React, { useState, useEffect, useMemo } from "react";
+import { API, api } from "@/lib/api";
 import {
-  Gauge, Truck, MapPin, Activity, Zap, WifiOff, CheckCircle,
-  Clock, AlertTriangle, ChevronRight, Navigation
+  Truck, AlertTriangle, WifiOff, Gauge, ChevronRight, Users,
+  Fuel, Zap, Clock, MapPin, Route
 } from "lucide-react";
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer
+  ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip,
+  ResponsiveContainer, Legend, AreaChart, Area, PieChart, Pie, Cell
 } from "recharts";
 
-// ─── Duration helper ───
-const fmtDuration = (ms) => {
-  if (ms == null || isNaN(ms)) return null;
-  if (ms < 0) return null;
-  const min = Math.floor(ms / 60000);
-  if (min < 1) return '< 1 min';
-  if (min < 60) return `${min} min`;
-  const h = Math.floor(min / 60);
-  const rm = min % 60;
-  if (h < 24) return rm > 0 ? `${h} h ${rm} min` : `${h} h`;
-  const d = Math.floor(h / 24);
-  if (d < 30) return `${d} jour${d > 1 ? 's' : ''}`;
-  const mo = Math.floor(d / 30);
-  if (mo < 12) return `${mo} mois`;
-  const y = Math.floor(mo / 12);
-  return `${y} an${y > 1 ? 's' : ''}`;
+// ═══ Categories — same source of truth as Analyse flotte ═══
+const CATEGORIES = [
+  { id: "inactif", label: "Sans activite", color: "#9CA3AF", text: "text-gray-600", seuil: "0%" },
+  { id: "sous_utilise", label: "Sous-utilise", color: "#EF4444", text: "text-red-600", seuil: "< 30%" },
+  { id: "modere", label: "Modere", color: "#F59E0B", text: "text-amber-600", seuil: "30–59%" },
+  { id: "bonne", label: "Bonne utilisation", color: "#10B981", text: "text-emerald-600", seuil: "60–84%" },
+  { id: "tres_utilise", label: "Forte utilisation", color: "#3B82F6", text: "text-blue-600", seuil: "≥ 85%" },
+];
+const CAT_MAP = Object.fromEntries(CATEGORIES.map(c => [c.id, c]));
+const DAYS_FR = ["Dim", "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam"];
+const dayFR = (ds) => DAYS_FR[new Date(ds + "T00:00:00").getDay()];
+
+// ═══ Small SVG donut ═══
+const Donut = ({ pct, color, size = 56 }) => {
+  const r = (size - 8) / 2;
+  const c = 2 * Math.PI * r;
+  return (
+    <svg width={size} height={size} className="shrink-0">
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#f3f4f6" strokeWidth="7" />
+      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth="7"
+        strokeDasharray={`${(pct / 100) * c} ${c}`} strokeLinecap="round"
+        transform={`rotate(-90 ${size / 2} ${size / 2})`} />
+    </svg>
+  );
 };
 
-const severityOf = (hoursAgo) => {
-  if (hoursAgo == null) return { level: 'unknown', color: 'text-gray-400', bg: 'bg-gray-100', dot: 'bg-gray-300', label: 'Inconnue' };
-  if (hoursAgo < 6) return { level: 'recent', color: 'text-amber-600', bg: 'bg-amber-50', dot: 'bg-amber-400', label: '< 6 h' };
-  if (hoursAgo < 24) return { level: 'watch', color: 'text-orange-600', bg: 'bg-orange-50', dot: 'bg-orange-400', label: '6–24 h' };
-  return { level: 'critical', color: 'text-red-600', bg: 'bg-red-50', dot: 'bg-red-500', label: '> 24 h' };
-};
-
-// ─── Stat ───
-const Stat = ({ label, value, sub }) => (
-  <div className="text-center">
-    <div className="text-lg font-semibold text-gray-900" style={{ fontFamily: 'Outfit, sans-serif' }}>{value}</div>
-    <div className="text-[10px] text-gray-400 uppercase tracking-wider mt-0.5">{label}</div>
-    {sub && <div className="text-[10px] text-gray-400">{sub}</div>}
+const Panel = ({ title, children, action, testId, className = "" }) => (
+  <div className={`bg-white rounded-xl border border-gray-200 shadow-sm p-5 ${className}`} data-testid={testId}>
+    <div className="flex items-center justify-between mb-4">
+      <h4 className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">{title}</h4>
+      {action}
+    </div>
+    {children}
   </div>
 );
 
-export const OverviewTab = ({ data, debugMode, fromDate, toDate, onNavigate }) => {
-  const { stats, trends, comparison, idleGroups } = data;
+const initials = (name) => name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
+const starColorCls = (stars) => stars >= 4 ? "text-emerald-600" : stars === 3 ? "text-amber-600" : "text-red-500";
+
+export const OverviewTab = ({ data, fromDate, toDate, onNavigate }) => {
+  const { stats, trends, efficiency } = data;
   const vehicles = stats?.vehicles || [];
-  const compVehicles = comparison?.vehicles || [];
+  const effVehicles = efficiency?.vehicles || [];
+  const effSummary = efficiency?.summary || {};
   const trendData = trends?.trends || [];
-  const [activeDrawer, setActiveDrawer] = useState(null);
 
-  const kpis = useMemo(() => {
-    const total = vehicles.length;
-    const active = vehicles.filter(v => v.connection_status === 'active');
-    const moving = vehicles.filter(v => v.movement_status === 'moving');
-    const offline = vehicles.filter(v => v.connection_status !== 'active');
-    const totalKm = Math.round(vehicles.reduce((s, v) => s + (v.mileage || 0), 0) * 10) / 10;
-    const totalEh = Math.round(vehicles.reduce((s, v) => s + (v.engine_hours || 0), 0) * 10) / 10;
-    const avgUtil = compVehicles.length > 0
-      ? Math.round(compVehicles.reduce((s, v) => s + (v.utilization_score || 0), 0) / compVehicles.length) : 0;
-    const zeroKm = compVehicles.filter(v => (v.total_distance_week || 0) === 0);
-    const lowUtil = compVehicles.filter(v => (v.utilization_score || 0) > 0 && (v.utilization_score || 0) < 30);
-    const topVehicle = compVehicles.length > 0 ? compVehicles.reduce((best, v) =>
-      (v.total_distance_week || 0) > (best.total_distance_week || 0) ? v : best, compVehicles[0]) : null;
+  // ---- Eco-driving (lazy, shares backend cache with Conducteurs) ----
+  const [eco, setEco] = useState({ loading: true, data: null, error: null });
+  useEffect(() => {
+    let cancelled = false;
+    setEco({ loading: true, data: null, error: null });
+    api.get(`${API}/drivers/ecodriving`, { params: { from_date: fromDate, to_date: toDate }, timeout: 120000 })
+      .then(res => { if (!cancelled) setEco({ loading: false, data: res.data.success ? res.data : null, error: res.data.success ? null : "indisponible" }); })
+      .catch(() => { if (!cancelled) setEco({ loading: false, data: null, error: "indisponible" }); });
+    return () => { cancelled = true; };
+  }, [fromDate, toDate]);
 
-    // Offline severity breakdown
+  // ---- Core computations (all from real endpoints) ----
+  const m = useMemo(() => {
+    const total = effVehicles.length;
+    const used = effVehicles.filter(v => v.active_days > 0);
+    const inactive = effVehicles.filter(v => v.active_days === 0);
+    const catCounts = {};
+    CATEGORIES.forEach(c => { catCounts[c.id] = effVehicles.filter(v => v.category === c.id).length; });
+    const totalKm = Math.round((effSummary.total_mileage || 0) * 10) / 10;
+    const kmPerUsed = used.length > 0 ? Math.round(totalKm / used.length) : 0;
+
+    const offline = vehicles.filter(v => v.connection_status !== "active");
     const now = Date.now();
-    const offlineEnriched = offline.map(v => {
-      const lastComm = v.last_update ? new Date(v.last_update) : null;
-      const msAgo = lastComm ? now - lastComm.getTime() : null;
-      const hAgo = msAgo != null ? msAgo / 3600000 : null;
-      return { ...v, msAgo, hAgo, severity: severityOf(hAgo), durationLabel: fmtDuration(msAgo) };
-    }).sort((a, b) => {
-      if (a.msAgo == null && b.msAgo == null) return 0;
-      if (a.msAgo == null) return -1;
-      if (b.msAgo == null) return 1;
-      return b.msAgo - a.msAgo;
+    const offline24h = offline.filter(v => v.last_update && (now - new Date(v.last_update).getTime()) > 86400000);
+    const strongUtil = effVehicles.filter(v => v.category === "tres_utilise");
+    const lowUtil = effVehicles.filter(v => v.category === "sous_utilise");
+
+    // Fuel (only if consumption rate configured — engine returns null otherwise)
+    const fuelL = vehicles.reduce((s, v) => v.fuel_used_liters !== null && v.fuel_used_liters !== undefined ? s + v.fuel_used_liters : s, 0);
+    const fuelCHF = vehicles.reduce((s, v) => v.fuel_cost_chf !== null && v.fuel_cost_chf !== undefined ? s + v.fuel_cost_chf : s, 0);
+    const fuelAvailable = vehicles.some(v => v.fuel_cost_chf !== null && v.fuel_cost_chf !== undefined);
+
+    // Daily distance per category (from real daily_breakdown)
+    const dailyMap = {};
+    effVehicles.forEach(v => {
+      (v.daily_breakdown || []).forEach(db => {
+        if (!dailyMap[db.date]) {
+          dailyMap[db.date] = { date: db.date, day: dayFR(db.date), total: 0, actifs: 0 };
+          CATEGORIES.forEach(c => { dailyMap[db.date][c.id] = 0; });
+        }
+        dailyMap[db.date][v.category] = Math.round((dailyMap[db.date][v.category] + db.km) * 10) / 10;
+        dailyMap[db.date].total = Math.round((dailyMap[db.date].total + db.km) * 10) / 10;
+        if (db.active) dailyMap[db.date].actifs += 1;
+      });
     });
+    const daily = Object.values(dailyMap).sort((a, b) => a.date.localeCompare(b.date));
 
-    const critCount = offlineEnriched.filter(v => v.severity.level === 'critical').length;
-    const watchCount = offlineEnriched.filter(v => v.severity.level === 'watch').length;
-    const recentCount = offlineEnriched.filter(v => v.severity.level === 'recent').length;
-    const unknownCount = offlineEnriched.filter(v => v.severity.level === 'unknown').length;
+    const topByKm = [...effVehicles].sort((a, b) => b.period_mileage - a.period_mileage).slice(0, 5);
 
-    return { total, active, moving, offline, offlineEnriched, totalKm, totalEh, avgUtil, zeroKm, lowUtil, topVehicle,
-      critCount, watchCount, recentCount, unknownCount };
-  }, [vehicles, compVehicles]);
+    return { total, used, inactive, catCounts, totalKm, kmPerUsed, offline, offline24h, strongUtil, lowUtil, fuelL, fuelCHF, fuelAvailable, daily, topByKm };
+  }, [effVehicles, effSummary, vehicles]);
 
-  // Offline counts for severity breakdown
-  const offCritical = kpis.critCount + kpis.unknownCount;
-
-  // Insights - enriched with stats
-  const insights = useMemo(() => {
+  // ---- Deterministic anomalies (documented rules, real data only) ----
+  const anomalies = useMemo(() => {
     const list = [];
-    if (kpis.offline.length > 0) {
-      const pct = kpis.total > 0 ? Math.round((kpis.offline.length / kpis.total) * 100) : 0;
-      const critDesc = kpis.critCount > 0 ? `${kpis.critCount} depuis plus de 24 h` : '';
-      list.push({ id: 'offline', type: 'warning', icon: 'WifiOff',
-        title: `${kpis.offline.length} vehicule${kpis.offline.length > 1 ? 's' : ''} hors ligne`,
-        detail: `${pct}% de la flotte${critDesc ? ` • ${critDesc}` : ''}` });
-    }
-    if (kpis.zeroKm.length > 0)
-      list.push({ id: 'zero_km', type: 'info', icon: 'Truck',
-        title: `${kpis.zeroKm.length} vehicule${kpis.zeroKm.length > 1 ? 's' : ''} sans activite`,
-        detail: `0 km sur ${fromDate} au ${toDate}` });
-    if (kpis.lowUtil.length > 0)
-      list.push({ id: 'low_util', type: 'danger', icon: 'AlertTriangle',
-        title: `${kpis.lowUtil.length} vehicule${kpis.lowUtil.length > 1 ? 's' : ''} sous-utilise${kpis.lowUtil.length > 1 ? 's' : ''}`,
-        detail: `Utilisation inferieure a 30% de la flotte` });
-    if (kpis.topVehicle && (kpis.topVehicle.total_distance_week || 0) > 0)
-      list.push({ id: 'top', type: 'success', icon: 'CheckCircle',
-        title: `Vehicule le plus utilise : ${kpis.topVehicle.label}`,
-        detail: `${kpis.topVehicle.total_distance_week} km — Utilisation ${kpis.topVehicle.utilization_score}%` });
+    if (m.inactive.length > 0) list.push({
+      id: "inactive", sev: "red",
+      title: `${m.inactive.length} vehicule${m.inactive.length > 1 ? "s" : ""} sans activite sur la periode`,
+      detail: m.inactive.slice(0, 3).map(v => v.label).join(", ") + (m.inactive.length > 3 ? "…" : ""),
+      nav: "analyse",
+    });
+    if (m.offline.length > 0) list.push({
+      id: "offline", sev: "red",
+      title: `${m.offline.length} vehicule${m.offline.length > 1 ? "s" : ""} hors ligne`,
+      detail: m.offline24h.length > 0 ? `dont ${m.offline24h.length} depuis plus de 24 h` : "Perte de signal GPS",
+      nav: "vehicles",
+    });
+    if (m.lowUtil.length > 0) list.push({
+      id: "lowutil", sev: "amber",
+      title: `${m.lowUtil.length} vehicule${m.lowUtil.length > 1 ? "s" : ""} sous-utilise${m.lowUtil.length > 1 ? "s" : ""} (< 30%)`,
+      detail: m.lowUtil.slice(0, 3).map(v => v.label).join(", "),
+      nav: "analyse",
+    });
+    if (m.strongUtil.length > 0) list.push({
+      id: "strong", sev: "blue",
+      title: `${m.strongUtil.length} vehicule${m.strongUtil.length > 1 ? "s" : ""} en forte utilisation (≥ 85%)`,
+      detail: m.strongUtil.slice(0, 3).map(v => v.label).join(", "),
+      nav: "analyse",
+    });
+    const lowEco = (eco.data?.drivers || []).filter(d => d.score && d.score.stars <= 2);
+    if (lowEco.length > 0) list.push({
+      id: "loweco", sev: "red",
+      title: `${lowEco.length} conducteur${lowEco.length > 1 ? "s" : ""} avec notation eco faible (≤ 2 etoiles Navixy)`,
+      detail: lowEco.map(d => d.driver_name).join(", "),
+      nav: "drivers",
+    });
     return list;
-  }, [kpis, fromDate, toDate]);
+  }, [m, eco.data]);
 
-  const audit = stats?._audit;
-  const avgMs = audit?.navixy_calls?.length > 0 ? Math.round(audit.navixy_calls.reduce((s, c) => s + (c.response_time_ms || 0), 0) / audit.navixy_calls.length) : null;
-  const cacheAge = audit?.cache?.hit ? audit.cache.age_seconds : null;
-  const dbg = (src, field) => debugMode ? { source: src, field, responseTime: avgMs, cacheAge } : undefined;
+  const actions = useMemo(() => {
+    const list = [];
+    if (m.inactive.length > 0) list.push({ t: `Evaluer la reaffectation des ${m.inactive.length} vehicules sans activite`, nav: "analyse" });
+    if (m.offline.length > 0) list.push({ t: `Verifier alimentation et connectivite des ${m.offline.length} trackers hors ligne`, nav: "vehicles" });
+    if (m.lowUtil.length > 0) list.push({ t: `Analyser le besoin reel des vehicules sous-utilises (${m.lowUtil.length})`, nav: "analyse" });
+    const lowEco = (eco.data?.drivers || []).filter(d => d.score && d.score.stars <= 2);
+    if (lowEco.length > 0) list.push({ t: `Revoir la conduite de ${lowEco.map(d => d.driver_name).join(", ")} (score eco faible)`, nav: "drivers" });
+    if (list.length === 0) list.push({ t: "Aucune action requise — flotte conforme aux seuils", nav: null });
+    return list;
+  }, [m, eco.data]);
 
-  // Offline drawer filter
-  const [offlineFilter, setOfflineFilter] = useState('all');
-  const filteredOffline = useMemo(() => {
-    if (offlineFilter === 'all') return kpis.offlineEnriched;
-    if (offlineFilter === 'critical') return kpis.offlineEnriched.filter(v => v.severity.level === 'critical' || v.severity.level === 'unknown');
-    if (offlineFilter === 'watch') return kpis.offlineEnriched.filter(v => v.severity.level === 'watch');
-    if (offlineFilter === 'recent') return kpis.offlineEnriched.filter(v => v.severity.level === 'recent');
-    return kpis.offlineEnriched;
-  }, [kpis.offlineEnriched, offlineFilter]);
+  const ecoDrivers = (eco.data?.drivers || []).filter(d => d.score).sort((a, b) => b.score.raw - a.score.raw).slice(0, 5);
+
+  const usedPct = m.total > 0 ? Math.round((m.used.length / m.total) * 1000) / 10 : 0;
+  const inactivePct = m.total > 0 ? Math.round((m.inactive.length / m.total) * 1000) / 10 : 0;
+
+  const donutData = CATEGORIES.map(c => ({ name: c.label, value: m.catCounts[c.id] || 0, color: c.color })).filter(d => d.value > 0);
+
+  const sevCls = { red: "bg-red-50 border-red-100 text-red-600", amber: "bg-amber-50 border-amber-100 text-amber-700", blue: "bg-blue-50 border-blue-100 text-blue-700" };
 
   return (
-    <div className="p-4 lg:p-8 space-y-6 max-w-[1600px] mx-auto" data-testid="overview-tab">
+    <div className="p-4 lg:p-8 space-y-5 max-w-[1600px] mx-auto" data-testid="overview-tab">
 
-      {/* ═══ KPI GRID — no "Cliquer pour le detail" ═══ */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
-        <div onClick={() => setActiveDrawer('utilization')} className="cursor-pointer" data-testid="kpi-click-utilization">
-          <KPICard label="Utilisation Flotte" value={kpis.avgUtil} unit="%" icon={Gauge}
-            status={kpis.avgUtil >= 60 ? 'good' : kpis.avgUtil >= 30 ? 'warning' : 'danger'}
-            debugInfo={dbg('vehicle-comparison', 'utilization_score')} />
+      {/* ═══ ROW 1 — KPI band ═══ */}
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
+        {/* Card 1 — fleet summary + sparkline */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 relative overflow-hidden col-span-2 md:col-span-1" data-testid="kpi-fleet-summary">
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">{m.total} vehicules</div>
+          <div className="mt-2 space-y-1 relative z-10">
+            <div className="flex items-center gap-1.5 text-[11px]">
+              <span className="w-2 h-2 rounded-full bg-emerald-500" />
+              <span className="text-gray-600">Flotte active ({usedPct}%) :</span>
+              <span className="font-semibold" style={{ fontFamily: "Outfit, sans-serif" }}>{m.used.length}/{m.total}</span>
+            </div>
+            <div className="flex items-center gap-1.5 text-[11px]">
+              <span className="w-2 h-2 rounded-full bg-gray-300" />
+              <span className="text-gray-600">Sans activite ({inactivePct}%) :</span>
+              <span className="font-semibold" style={{ fontFamily: "Outfit, sans-serif" }}>{m.inactive.length}/{m.total}</span>
+            </div>
+            {m.offline.length > 0 && (
+              <div className="flex items-center gap-1 text-[10px] text-red-500 font-medium pt-1">
+                <AlertTriangle size={11} /> {m.offline.length} hors ligne
+              </div>
+            )}
+          </div>
+          {m.daily.length > 1 && (
+            <div className="absolute bottom-0 left-0 right-0 h-10 opacity-40">
+              <ResponsiveContainer width="100%" height={40}>
+                <AreaChart data={m.daily}><Area type="monotone" dataKey="total" stroke="#10B981" fill="#10B981" fillOpacity={0.25} strokeWidth={1.5} /></AreaChart>
+              </ResponsiveContainer>
+            </div>
+          )}
         </div>
-        <div onClick={() => setActiveDrawer('active')} className="cursor-pointer" data-testid="kpi-click-active">
-          <KPICard label="Vehicules actifs" value={`${kpis.active.length}`} unit={`/ ${kpis.total}`} icon={Truck}
-            status={kpis.active.length > 0 ? 'good' : 'danger'}
-            debugInfo={dbg('tracker/get_state', 'connection_status')} />
-        </div>
-        <div onClick={() => setActiveDrawer('distance')} className="cursor-pointer" data-testid="kpi-click-distance">
-          <KPICard label="Distance parcourue" value={Math.round(kpis.totalKm).toLocaleString('fr-FR')} unit="km" icon={MapPin}
-            debugInfo={dbg('tracker/stats/mileage', 'mileage')} />
-        </div>
-        <div onClick={() => setActiveDrawer('engine')} className="cursor-pointer" data-testid="kpi-click-engine">
-          <KPICard label="Heures moteur" value={Math.round(kpis.totalEh).toLocaleString('fr-FR')} unit="h" icon={Activity}
-            debugInfo={dbg('tracker/counter', 'engine_hours')} />
-        </div>
-        <div onClick={() => setActiveDrawer('moving')} className="cursor-pointer" data-testid="kpi-click-moving">
-          <KPICard label="En mouvement" value={kpis.moving.length} icon={Navigation}
-            status={kpis.moving.length > 0 ? 'good' : undefined}
-            debugInfo={dbg('tracker/get_state', 'movement_status')} />
-        </div>
-        <div onClick={() => setActiveDrawer('offline')} className="cursor-pointer" data-testid="kpi-click-offline">
-          <KPICard label="Hors ligne" value={kpis.offline.length} icon={WifiOff}
-            status={kpis.offline.length > 0 ? 'danger' : 'good'}
-            debugInfo={dbg('tracker/get_state', 'connection_status')} />
+
+        {/* Cards 2-5 — category donuts */}
+        {["sous_utilise", "modere", "bonne", "tres_utilise"].map(cid => {
+          const c = CAT_MAP[cid];
+          const count = m.catCounts[cid] || 0;
+          const pct = m.total > 0 ? (count / m.total) * 100 : 0;
+          return (
+            <button key={cid} onClick={() => onNavigate?.("analyse")}
+              className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 text-left hover:shadow-md transition-shadow"
+              data-testid={`kpi-cat-${cid}`}>
+              <div className={`text-[10px] font-semibold uppercase tracking-wider ${count > 0 ? c.text : "text-gray-400"}`}>
+                {c.label} ({Math.round(pct)}%)
+              </div>
+              <div className="flex items-center gap-3 mt-2">
+                <Donut pct={pct} color={count > 0 ? c.color : "#e5e7eb"} />
+                <div>
+                  <div className="text-2xl font-semibold" style={{ fontFamily: "Outfit, sans-serif" }}>{count}</div>
+                  <div className="text-[10px] text-gray-400">vehicule{count > 1 ? "s" : ""} · {c.seuil}</div>
+                </div>
+              </div>
+            </button>
+          );
+        })}
+
+        {/* Card 6 — km / vehicule utilise */}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4" data-testid="kpi-km-per-used">
+          <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Km moy. / utilise</div>
+          <div className="text-2xl font-semibold mt-1" style={{ fontFamily: "Outfit, sans-serif" }}>{m.kmPerUsed}</div>
+          <div className="text-[10px] text-gray-400">{Math.round(m.totalKm)} km / {m.used.length} vehicule{m.used.length > 1 ? "s" : ""} utilise{m.used.length > 1 ? "s" : ""}</div>
+          {m.daily.length > 1 && (
+            <div className="h-9 mt-1">
+              <ResponsiveContainer width="100%" height={36}>
+                <ComposedChart data={m.daily}><Bar dataKey="total" fill="#3B82F6" radius={[2, 2, 0, 0]} /></ComposedChart>
+              </ResponsiveContainer>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* ═══ DATA SOURCE ═══ */}
-      <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 rounded-xl border border-gray-200">
-        <div className="w-2 h-2 rounded-full bg-emerald-500" />
-        <span className="text-[10px] text-gray-500">Donnees Navixy — aucune estimation</span>
-        {audit && <span className="text-[10px] text-gray-400 ml-auto">v{audit.engine_version} | {fromDate} au {toDate}{audit.cache?.hit ? ` | cache ${audit.cache.age_seconds}s` : ''}</span>}
+      {/* ═══ ROW 2 — repartition / statut & finance / activite quotidienne ═══ */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        {/* Repartition */}
+        <Panel title="Repartition des vehicules" testId="panel-repartition" className="lg:col-span-3">
+          <div className="w-full h-4 rounded-full overflow-hidden flex mb-4">
+            {CATEGORIES.map(c => {
+              const count = m.catCounts[c.id] || 0;
+              if (count === 0) return null;
+              return <div key={c.id} style={{ width: `${(count / Math.max(1, m.total)) * 100}%`, background: c.color }}
+                className="h-full first:rounded-l-full last:rounded-r-full" title={`${c.label} : ${count}`} />;
+            })}
+          </div>
+          <div className="space-y-2">
+            {CATEGORIES.map(c => (
+              <div key={c.id} className="flex items-center justify-between text-[11px]">
+                <div className="flex items-center gap-2">
+                  <span className="w-2.5 h-2.5 rounded-sm" style={{ background: c.color }} />
+                  <span className="text-gray-600">{c.label}</span>
+                  <span className="text-gray-300">{c.seuil}</span>
+                </div>
+                <span className="font-semibold" style={{ fontFamily: "Outfit, sans-serif" }}>{m.catCounts[c.id] || 0}</span>
+              </div>
+            ))}
+          </div>
+        </Panel>
+
+        {/* Statut & impact financier */}
+        <Panel title="Statut & impact financier" testId="panel-finance" className="lg:col-span-3">
+          <div className="flex items-center justify-center">
+            <div className="relative">
+              <PieChart width={150} height={150}>
+                <Pie data={donutData.length > 0 ? donutData : [{ name: "Aucune donnee", value: 1, color: "#f3f4f6" }]}
+                  dataKey="value" innerRadius={45} outerRadius={65} paddingAngle={2} startAngle={90} endAngle={-270}>
+                  {(donutData.length > 0 ? donutData : [{ color: "#f3f4f6" }]).map((d, i) => <Cell key={i} fill={d.color} stroke="none" />)}
+                </Pie>
+                <Tooltip contentStyle={{ borderRadius: 8, border: "1px solid #e5e7eb", fontSize: 11 }} />
+              </PieChart>
+              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                <span className="text-xl font-semibold" style={{ fontFamily: "Outfit, sans-serif" }}>{m.total}</span>
+                <span className="text-[9px] text-gray-400 uppercase">vehicules</span>
+              </div>
+            </div>
+          </div>
+          <div className="mt-3 pt-3 border-t border-gray-100 space-y-1.5" data-testid="fuel-impact">
+            {m.fuelAvailable ? (
+              <>
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="flex items-center gap-1.5 text-gray-600"><Fuel size={12} className="text-gray-400" />Carburant estime</span>
+                  <span className="font-semibold" style={{ fontFamily: "Outfit, sans-serif" }}>{Math.round(m.fuelL * 10) / 10} L</span>
+                </div>
+                <div className="flex items-center justify-between text-[11px]">
+                  <span className="text-gray-600">Cout carburant (periode)</span>
+                  <span className="font-semibold text-red-500" style={{ fontFamily: "Outfit, sans-serif" }}>{Math.round(m.fuelCHF)} CHF</span>
+                </div>
+                <div className="text-[9px] text-gray-400">Base : km reels × taux configure (onglet Couts)</div>
+              </>
+            ) : (
+              <div className="text-[10px] text-gray-400">
+                Cout carburant indisponible — configurer un taux de consommation dans l'onglet <button onClick={() => onNavigate?.("costs")} className="text-blue-600 hover:underline" data-testid="link-configure-fuel">Couts</button>.
+              </div>
+            )}
+          </div>
+        </Panel>
+
+        {/* Activite quotidienne */}
+        <Panel title="Activite quotidienne" testId="panel-daily-activity" className="lg:col-span-6">
+          {m.daily.length > 0 ? (
+            <ResponsiveContainer width="100%" height={240}>
+              <ComposedChart data={m.daily} barSize={22}>
+                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+                <XAxis dataKey="date" tickFormatter={(v) => dayFR(v)} tick={{ fontSize: 10, fill: "#5E5E62" }} axisLine={false} tickLine={false} />
+                <YAxis tick={{ fontSize: 10, fill: "#8A8A8E" }} axisLine={false} tickLine={false} width={40} unit=" km" />
+                <Tooltip contentStyle={{ borderRadius: 8, border: "1px solid #e5e7eb", fontSize: 11 }}
+                  labelFormatter={(v) => { const d = new Date(v + "T00:00:00"); return `${dayFR(v)} ${d.getDate()}/${d.getMonth() + 1} — km par categorie de vehicule`; }} />
+                <Legend wrapperStyle={{ fontSize: 10 }} />
+                {CATEGORIES.filter(c => c.id !== "inactif").map(c => (
+                  <Bar key={c.id} dataKey={c.id} name={c.label} stackId="km" fill={c.color} />
+                ))}
+                <Line type="monotone" dataKey="total" name="Total km/jour" stroke="#111" strokeWidth={2} dot={{ r: 3 }} />
+              </ComposedChart>
+            </ResponsiveContainer>
+          ) : (
+            <div className="h-[240px] flex items-center justify-center text-xs text-gray-400">Aucune donnee quotidienne sur la periode</div>
+          )}
+          <div className="text-[9px] text-gray-400 mt-1">Barres : km/jour repartis selon la categorie d'utilisation du vehicule sur la periode — Source : tracker/stats/mileage/read</div>
+        </Panel>
       </div>
 
-      {/* ═══ INSIGHTS — full card clickable ═══ */}
-      {insights.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6" data-testid="insights">
-          <SectionHeader icon={Zap} title="Insights" count={insights.length} />
-          <div className="space-y-2">
-            {insights.map((ins) => {
-              const iconMap = { AlertTriangle, WifiOff, Clock, Truck, CheckCircle };
-              return (
-                <InsightCard key={ins.id} {...ins} icon={iconMap[ins.icon] || AlertTriangle}
-                  onClick={() => setActiveDrawer(`insight_${ins.id}`)}
-                  data-testid={`insight-${ins.id}`} />
-              );
-            })}
-          </div>
-        </div>
-      )}
-
-      {/* ═══ IDLE BY GROUP ═══ */}
-      {idleGroups && idleGroups.groups?.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6" data-testid="idle-by-group">
-          <SectionHeader icon={Clock} title="Ralenti Engins de Chantier" iconBg="bg-amber-100" iconColor="text-amber-600" count={`${idleGroups.total_engins} engins`} />
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
-            {idleGroups.groups.map(g => (
-              <div key={g.name} className="rounded-xl p-4 border bg-gray-50 border-gray-200">
-                <div className="flex justify-between mb-2"><span className="text-sm font-semibold" style={{ fontFamily: 'Outfit, sans-serif' }}>{g.name}</span><span className="text-[10px] text-gray-500">{g.total}</span></div>
-                <div className="grid grid-cols-3 gap-2 text-center mb-2">
-                  <div><div className="text-lg font-bold text-emerald-600">{g.active}</div><div className="text-[9px] text-gray-500">Actifs</div></div>
-                  <div><div className={`text-lg font-bold ${g.idle > 0 ? 'text-amber-600' : 'text-gray-400'}`}>{g.idle}</div><div className="text-[9px] text-gray-500">Ralenti</div></div>
-                  <div><div className="text-lg font-bold text-gray-400">{g.offline}</div><div className="text-[9px] text-gray-500">Offline</div></div>
-                </div>
-                <div className="w-full h-2 bg-white rounded-full overflow-hidden border border-gray-200 flex">
-                  <div className="h-full bg-emerald-400" style={{ width: `${(g.active / Math.max(1, g.total)) * 100}%` }} />
-                  <div className="h-full bg-amber-400" style={{ width: `${(g.idle / Math.max(1, g.total)) * 100}%` }} />
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
-
-      {/* ═══ CHART ═══ */}
-      {trendData.length > 0 && (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          <h4 className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-4">Distance quotidienne</h4>
-          <ResponsiveContainer width="100%" height={180}>
-            <BarChart data={trendData} barSize={16}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
-              <XAxis dataKey="day_name" tick={{ fontSize: 10, fill: '#8A8A8E' }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fontSize: 10, fill: '#8A8A8E' }} axisLine={false} tickLine={false} width={40} unit=" km" />
-              <Tooltip contentStyle={{ borderRadius: '8px', border: '1px solid #e5e7eb', fontSize: 11 }} formatter={(v) => [`${v} km`, 'Distance']} />
-              <Bar dataKey="total_distance" fill="#111" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
-      )}
-
-      {/* ═══════════════════ DRAWERS ═══════════════════ */}
-
-      {/* ──── OFFLINE ──── */}
-      {(activeDrawer === 'offline' || activeDrawer === 'insight_offline') && (
-        <DashboardDetailDrawer
-          title={`${kpis.offline.length} vehicule${kpis.offline.length > 1 ? 's' : ''} hors ligne`}
-          subtitle={`${kpis.offline.length} sur ${kpis.total} vehicules • ${kpis.total > 0 ? Math.round((kpis.offline.length / kpis.total) * 100) : 0}% de la flotte`}
-          badge={kpis.critCount > 0 ? `${kpis.critCount} hors ligne depuis plus de 24 h` : undefined}
-          onClose={() => { setActiveDrawer(null); setOfflineFilter('all'); }}>
-          {/* Severity summary */}
-          <div className="flex gap-2 mb-4">
-            {[
-              { color: 'bg-red-500', label: '> 24 h', count: offCritical },
-              { color: 'bg-orange-400', label: '6–24 h', count: kpis.watchCount },
-              { color: 'bg-amber-400', label: '< 6 h', count: kpis.recentCount },
-            ].filter(s => s.count > 0).map(s => (
-              <div key={s.label} className="flex items-center gap-1.5 px-2.5 py-1 bg-gray-50 rounded-lg border border-gray-200">
-                <div className={`w-2 h-2 rounded-full ${s.color}`} />
-                <span className="text-[11px] text-gray-600 font-medium">{s.count}</span>
-                <span className="text-[10px] text-gray-400">{s.label}</span>
-              </div>
-            ))}
-          </div>
-          {/* Filter tabs */}
-          <div className="flex gap-1.5 mb-4">
-            {[
-              { id: 'all', label: `Tous`, count: kpis.offline.length },
-              { id: 'critical', label: '> 24 h', count: offCritical },
-              { id: 'watch', label: '6–24 h', count: kpis.watchCount },
-              { id: 'recent', label: '< 6 h', count: kpis.recentCount },
-            ].filter(f => f.count > 0 || f.id === 'all').map(f => (
-              <button key={f.id} onClick={() => setOfflineFilter(f.id)}
-                className={`px-2.5 py-1 text-[11px] font-medium rounded-lg border transition-colors ${
-                  offlineFilter === f.id ? 'bg-[#111] text-white border-[#111]' : 'bg-white text-gray-500 border-gray-200 hover:bg-gray-50'}`}>
-                {f.label} {f.count}
-              </button>
-            ))}
-          </div>
-          {/* Vehicle list */}
-          <div className="space-y-2">
-            {filteredOffline.map(v => {
-              const lastComm = v.last_update ? new Date(v.last_update) : null;
-              return (
-                <div key={v.tracker_id} className={`rounded-xl border p-3.5 ${v.severity.bg} border-gray-200`} data-testid={`offline-vehicle-${v.tracker_id}`}>
-                  <div className="flex items-start justify-between mb-1.5">
-                    <div>
-                      <div className="text-[13px] font-semibold text-gray-900">{v.label}</div>
-                      <div className="text-[10px] text-gray-400">{v.model || '—'}</div>
-                    </div>
-                    <div className={`w-2.5 h-2.5 rounded-full mt-1 ${v.severity.dot}`} title={v.severity.label} />
-                  </div>
-                  <div className={`text-xs font-semibold mb-2 ${v.severity.color}`}>
-                    Hors ligne depuis {v.durationLabel || 'duree inconnue'}
-                  </div>
-                  <div className="space-y-0.5 text-[11px] text-gray-500">
-                    <div>Derniere communication : {lastComm ? lastComm.toLocaleString('fr-FR') : <span className="text-gray-400 italic">inconnue</span>}</div>
-                    <div>Derniere position : {v.location?.lat && v.location.lat !== 0 ? `${v.location.lat.toFixed(4)}, ${v.location.lng.toFixed(4)}` : <span className="text-gray-400 italic">inconnue</span>}</div>
-                    <div>Mouvement : {v.movement_status === 'moving' ? 'En route' : v.movement_status === 'idle' ? 'Ralenti' : 'Arrete'} • Vitesse : {v.speed || 0} km/h</div>
-                  </div>
-                  {!lastComm && (
-                    <div className="mt-2 text-[10px] text-gray-400 italic bg-white/60 rounded-lg px-2 py-1 border border-gray-200">
-                      Etat a verifier — aucune donnee de communication disponible
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-          </div>
-        </DashboardDetailDrawer>
-      )}
-
-      {/* ──── ACTIVE ──── */}
-      {activeDrawer === 'active' && (
-        <DashboardDetailDrawer
-          title={`${kpis.active.length} vehicule${kpis.active.length > 1 ? 's' : ''} actif${kpis.active.length > 1 ? 's' : ''}`}
-          subtitle={`${kpis.total > 0 ? Math.round((kpis.active.length / kpis.total) * 100) : 0}% de la flotte`}
-          onClose={() => setActiveDrawer(null)} linkLabel="Tous les vehicules" onLinkClick={() => { setActiveDrawer(null); onNavigate?.('vehicles'); }}>
-          <div className="space-y-2">
-            {kpis.active.map(v => {
-              const isMoving = v.movement_status === 'moving';
-              return (
-                <div key={v.tracker_id} className="rounded-xl border border-gray-200 bg-white p-3.5">
-                  <div className="flex items-start justify-between mb-1">
-                    <div className="text-[13px] font-semibold text-gray-900">{v.label}</div>
-                    <span className="w-2 h-2 rounded-full bg-emerald-500 mt-1.5" />
-                  </div>
-                  <div className={`text-xs font-medium mb-1.5 ${isMoving ? 'text-emerald-600' : 'text-gray-500'}`}>
-                    {isMoving ? `En mouvement • ${v.speed} km/h` : v.movement_status === 'idle' ? 'Au ralenti • moteur allume' : 'Arrete'}
-                  </div>
-                  <div className="text-[11px] text-gray-500 space-y-0.5">
-                    <div>Distance : {(v.mileage || 0).toFixed(0)} km (periode)</div>
-                    {v.last_update && <div>Dern. comm. : {new Date(v.last_update).toLocaleString('fr-FR')}</div>}
-                    {v.location?.lat !== 0 && <div>Position : {v.location.lat?.toFixed(4)}, {v.location.lng?.toFixed(4)}</div>}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </DashboardDetailDrawer>
-      )}
-
-      {/* ──── DISTANCE ──── */}
-      {(activeDrawer === 'distance') && (() => {
-        const sorted = [...vehicles].sort((a, b) => (b.mileage || 0) - (a.mileage || 0));
-        const maxKm = sorted.length > 0 ? (sorted[0].mileage || 0) : 1;
-        return (
-          <DashboardDetailDrawer
-            title={`${Math.round(kpis.totalKm).toLocaleString('fr-FR')} km parcourus`}
-            subtitle={`${(new Date(toDate) - new Date(fromDate)) / 86400000 + 1} jours • ${kpis.total} vehicules`}
-            onClose={() => setActiveDrawer(null)} linkLabel="Analyse complete" onLinkClick={() => { setActiveDrawer(null); onNavigate?.('analyse'); }}>
-            <div className="grid grid-cols-2 gap-3 mb-5 p-3 bg-gray-50 rounded-xl">
-              <Stat label="Distance totale" value={`${Math.round(kpis.totalKm).toLocaleString('fr-FR')} km`} />
-              <Stat label="Moy. / vehicule" value={`${kpis.total > 0 ? Math.round(kpis.totalKm / kpis.total) : 0} km`} />
-            </div>
-            <div className="space-y-1.5">
-              {sorted.map(v => {
-                const pct = kpis.totalKm > 0 ? Math.round((v.mileage || 0) / kpis.totalKm * 100) : 0;
-                const barW = maxKm > 0 ? Math.max(1, ((v.mileage || 0) / maxKm) * 100) : 0;
-                return (
-                  <div key={v.tracker_id} className="flex items-center gap-3 py-1.5">
-                    <div className="w-32 lg:w-40 truncate text-xs font-medium text-gray-800" title={v.label}>{v.label}</div>
-                    <div className="flex-1 h-5 bg-gray-100 rounded relative overflow-hidden">
-                      <div className="h-full bg-[#111] rounded transition-all" style={{ width: `${barW}%` }} />
-                    </div>
-                    <div className="w-20 text-right text-[11px] tabular-nums">
-                      <span className="font-semibold">{(v.mileage || 0).toFixed(0)} km</span>
-                      <span className="text-gray-400 ml-1">{pct}%</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </DashboardDetailDrawer>
-        );
-      })()}
-
-      {/* ──── ENGINE HOURS ──── */}
-      {activeDrawer === 'engine' && (() => {
-        const sorted = [...vehicles].sort((a, b) => (b.engine_hours || 0) - (a.engine_hours || 0));
-        const maxEh = sorted.length > 0 ? (sorted[0].engine_hours || 1) : 1;
-        return (
-          <DashboardDetailDrawer
-            title={`${Math.round(kpis.totalEh).toLocaleString('fr-FR')} h moteur`}
-            subtitle="Compteurs cumulatifs totaux"
-            onClose={() => setActiveDrawer(null)}>
-            <div className="text-xs text-gray-500 mb-4 p-2.5 bg-amber-50 rounded-lg border border-amber-200">
-              Les heures moteur sont des compteurs totaux (non periodiques).
-            </div>
-            <div className="space-y-1.5">
-              {sorted.map(v => {
-                const barW = maxEh > 0 ? Math.max(1, ((v.engine_hours || 0) / maxEh) * 100) : 0;
-                return (
-                  <div key={v.tracker_id} className="flex items-center gap-3 py-1.5">
-                    <div className="w-32 lg:w-40 truncate text-xs font-medium text-gray-800">{v.label}</div>
-                    <div className="flex-1 h-5 bg-gray-100 rounded relative overflow-hidden">
-                      <div className="h-full bg-purple-400 rounded transition-all" style={{ width: `${barW}%` }} />
-                    </div>
-                    <span className="w-16 text-right text-[11px] font-semibold tabular-nums">{(v.engine_hours || 0).toFixed(0)} h</span>
-                  </div>
-                );
-              })}
-            </div>
-          </DashboardDetailDrawer>
-        );
-      })()}
-
-      {/* ──── MOVING ──── */}
-      {activeDrawer === 'moving' && (
-        <DashboardDetailDrawer
-          title={`${kpis.moving.length} vehicule${kpis.moving.length > 1 ? 's' : ''} en mouvement`}
-          subtitle="Etat instantane"
-          onClose={() => setActiveDrawer(null)}>
-          {kpis.moving.length === 0 ? (
-            <div className="text-center py-12 text-gray-400 text-sm">Aucun vehicule en mouvement</div>
+      {/* ═══ ROW 3 — anomalies / conducteurs eco / actions + snapshot ═══ */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        {/* Anomalies */}
+        <Panel title="Anomalies & alertes" testId="panel-anomalies" className="lg:col-span-4">
+          {anomalies.length === 0 ? (
+            <div className="text-xs text-gray-400 py-6 text-center">Aucune anomalie detectee sur la periode</div>
           ) : (
             <div className="space-y-2">
-              {kpis.moving.map(v => (
-                <div key={v.tracker_id} className="rounded-xl border border-emerald-200 bg-emerald-50 p-3.5">
-                  <div className="text-[13px] font-semibold text-gray-900 mb-1">{v.label}</div>
-                  <div className="text-xs font-medium text-emerald-600 mb-1.5">En mouvement • {v.speed} km/h</div>
-                  <div className="text-[11px] text-gray-500">
-                    {v.location?.lat !== 0 && <span>Position : {v.location.lat?.toFixed(4)}, {v.location.lng?.toFixed(4)}</span>}
+              {anomalies.map(a => (
+                <button key={a.id} onClick={() => a.nav && onNavigate?.(a.nav)}
+                  className={`w-full text-left p-3 rounded-lg border transition-colors hover:brightness-95 ${sevCls[a.sev]}`}
+                  data-testid={`anomaly-${a.id}`}>
+                  <div className="flex items-start gap-2">
+                    <AlertTriangle size={13} className="mt-0.5 shrink-0" />
+                    <div>
+                      <div className="text-[11px] font-semibold">{a.title}</div>
+                      <div className="text-[10px] opacity-70 mt-0.5">{a.detail}</div>
+                    </div>
                   </div>
-                </div>
+                </button>
               ))}
             </div>
           )}
-        </DashboardDetailDrawer>
-      )}
+          <div className="text-[9px] text-gray-400 mt-3">Regles deterministes sur donnees Navixy — aucun seuil arbitraire non documente</div>
+        </Panel>
 
-      {/* ──── UTILIZATION ──── */}
-      {activeDrawer === 'utilization' && (
-        <DashboardDetailDrawer
-          title={`Utilisation flotte : ${kpis.avgUtil}%`}
-          subtitle={`${fromDate} au ${toDate}`}
-          onClose={() => setActiveDrawer(null)} linkLabel="Analyse complete (Analyse flotte)" onLinkClick={() => { setActiveDrawer(null); onNavigate?.('analyse'); }}>
-          <div className="grid grid-cols-3 gap-3 mb-5 p-3 bg-gray-50 rounded-xl">
-            <Stat label="Utilisation moy." value={`${kpis.avgUtil}%`} />
-            <Stat label="Utilises" value={compVehicles.filter(v => (v.total_distance_week || 0) > 0).length} />
-            <Stat label="Non utilises" value={kpis.zeroKm.length} />
-          </div>
-          <div className="space-y-1.5">
-            {[...compVehicles].sort((a, b) => (b.utilization_score || 0) - (a.utilization_score || 0)).map(v => {
-              const u = v.utilization_score || 0;
-              return (
-                <div key={v.tracker_id} className="flex items-center gap-3 py-1.5">
-                  <div className="w-32 lg:w-40 truncate text-xs font-medium text-gray-800">{v.label}</div>
-                  <div className="flex-1 h-5 bg-gray-100 rounded relative overflow-hidden">
-                    <div className={`h-full rounded transition-all ${u >= 85 ? 'bg-blue-500' : u >= 60 ? 'bg-emerald-400' : u >= 30 ? 'bg-amber-400' : u > 0 ? 'bg-red-400' : 'bg-gray-200'}`} style={{ width: `${Math.max(1, u)}%` }} />
-                  </div>
-                  <div className="w-24 text-right text-[11px] tabular-nums">
-                    <span className="font-semibold">{u}%</span>
-                    <span className="text-gray-400 ml-1">{v.active_days || 0}j</span>
-                    <span className="text-gray-400 ml-1">{v.total_distance_week} km</span>
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </DashboardDetailDrawer>
-      )}
-
-      {/* ──── INSIGHT: ZERO KM ──── */}
-      {activeDrawer === 'insight_zero_km' && (
-        <DashboardDetailDrawer
-          title={`${kpis.zeroKm.length} vehicule${kpis.zeroKm.length > 1 ? 's' : ''} sans activite`}
-          subtitle={`0 km enregistres du ${fromDate} au ${toDate}`}
-          onClose={() => setActiveDrawer(null)}>
-          <div className="space-y-2">
-            {kpis.zeroKm.map(v => {
-              const sv = vehicles.find(x => x.tracker_id === v.tracker_id);
-              const isOnline = sv?.connection_status === 'active';
-              return (
-                <div key={v.tracker_id} className="rounded-xl border border-gray-200 bg-white p-3.5">
-                  <div className="flex items-start justify-between mb-1">
-                    <div className="text-[13px] font-semibold text-gray-900">{v.label}</div>
-                    <span className={`w-2 h-2 rounded-full mt-1.5 ${isOnline ? 'bg-emerald-500' : 'bg-gray-300'}`} />
-                  </div>
-                  <div className="text-xs text-gray-500 mb-1">
-                    {isOnline ? 'Connecte mais aucun deplacement' : 'Hors ligne — aucun deplacement'}
-                  </div>
-                  <div className="text-[11px] text-gray-400">
-                    {sv?.last_update ? `Dern. comm. : ${new Date(sv.last_update).toLocaleString('fr-FR')}` : 'Dern. comm. : inconnue'}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </DashboardDetailDrawer>
-      )}
-
-      {/* ──── INSIGHT: LOW UTIL ──── */}
-      {activeDrawer === 'insight_low_util' && (
-        <DashboardDetailDrawer
-          title={`${kpis.lowUtil.length} vehicule${kpis.lowUtil.length > 1 ? 's' : ''} sous-utilise${kpis.lowUtil.length > 1 ? 's' : ''}`}
-          subtitle={`Utilisation < 30% (moy. flotte : ${kpis.avgUtil}%)`}
-          onClose={() => setActiveDrawer(null)} linkLabel="Analyse flotte" onLinkClick={() => { setActiveDrawer(null); onNavigate?.('analyse'); }}>
-          <div className="space-y-2">
-            {kpis.lowUtil.map(v => (
-              <div key={v.tracker_id} className="rounded-xl border border-gray-200 bg-white p-3.5">
-                <div className="flex items-start justify-between mb-1">
-                  <div className="text-[13px] font-semibold text-gray-900">{v.label}</div>
-                  <span className="text-xs font-semibold text-amber-600">{v.utilization_score}%</span>
-                </div>
-                <div className="text-[11px] text-gray-500 space-y-0.5">
-                  <div>Jours actifs : {v.active_days || 0} / {v.total_days || '—'}</div>
-                  <div>Distance : {v.total_distance_week} km</div>
-                  <div>Ecart moy. flotte : <span className="text-red-500 font-medium">{Math.round((v.utilization_score || 0) - kpis.avgUtil)} pts</span></div>
-                </div>
-              </div>
-            ))}
-          </div>
-        </DashboardDetailDrawer>
-      )}
-
-      {/* ──── INSIGHT: TOP ──── */}
-      {activeDrawer === 'insight_top' && kpis.topVehicle && (() => {
-        const v = kpis.topVehicle;
-        const sv = vehicles.find(x => x.tracker_id === v.tracker_id);
-        return (
-          <DashboardDetailDrawer title="Vehicule le plus utilise" subtitle={v.label}
-            onClose={() => setActiveDrawer(null)} linkLabel="Voir dans Vehicules" onLinkClick={() => { setActiveDrawer(null); onNavigate?.('vehicles'); }}>
-            <div className="grid grid-cols-2 gap-3 p-3 bg-gray-50 rounded-xl mb-4">
-              <Stat label="Distance" value={`${v.total_distance_week} km`} />
-              <Stat label="Utilisation" value={`${v.utilization_score}%`} />
-              <Stat label="Jours actifs" value={`${v.active_days || 0}/${v.total_days || '—'}`} />
-              <Stat label="Moteur" value={`${(sv?.engine_hours || 0).toFixed(0)} h`} />
+        {/* Conducteurs & score eco */}
+        <Panel title="Conducteurs & score eco" testId="panel-eco-drivers" className="lg:col-span-4"
+          action={<button onClick={() => onNavigate?.("drivers")} className="text-[10px] text-blue-600 hover:underline flex items-center gap-0.5" data-testid="link-drivers">Detail<ChevronRight size={11} /></button>}>
+          {eco.loading ? (
+            <div className="flex flex-col items-center justify-center py-8 gap-2">
+              <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-800 rounded-full animate-spin" />
+              <span className="text-[10px] text-gray-400">Rapport Navixy « Qualite de conduite »…</span>
             </div>
-            <div className="text-xs text-gray-500 p-2.5 bg-gray-50 rounded-lg">
-              Moy. flotte : {kpis.avgUtil}% utilisation — {kpis.total > 0 ? Math.round(kpis.totalKm / kpis.total) : 0} km/vehicule
+          ) : ecoDrivers.length === 0 ? (
+            <div className="text-xs text-gray-400 py-6 text-center">Aucune donnee eco-conduite attribuable sur la periode</div>
+          ) : (
+            <div className="space-y-2">
+              {ecoDrivers.map((d, i) => (
+                <button key={d.employee_id} onClick={() => onNavigate?.("drivers")}
+                  className="w-full flex items-center gap-3 p-2.5 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors text-left"
+                  data-testid={`eco-driver-${d.employee_id}`}>
+                  <span className="text-[10px] font-semibold text-gray-400 w-3">{i + 1}</span>
+                  <span className="w-8 h-8 rounded-full bg-[#111] text-white flex items-center justify-center text-[10px] font-semibold shrink-0">{initials(d.driver_name)}</span>
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-medium text-gray-900 truncate">{d.driver_name}</div>
+                    <div className="text-[10px] text-gray-400">{Math.round(d.distance_km)} km · {d.trips_count} trajets</div>
+                  </div>
+                  <span className={`text-xs font-semibold ${starColorCls(d.score.stars)}`} style={{ fontFamily: "Outfit, sans-serif" }} title="Notation native Navixy">{d.score.display}</span>
+                </button>
+              ))}
             </div>
-          </DashboardDetailDrawer>
-        );
-      })()}
+          )}
+          <div className="text-[9px] text-gray-400 mt-3">Score natif Navixy — Rapport « Qualite de conduite » (plugin 46)</div>
+        </Panel>
+
+        {/* Actions + snapshot */}
+        <div className="lg:col-span-4 space-y-4">
+          <Panel title="Actions recommandees" testId="panel-actions">
+            <div className="space-y-1.5">
+              {actions.map((a, i) => (
+                <button key={i} onClick={() => a.nav && onNavigate?.(a.nav)} disabled={!a.nav}
+                  className="w-full flex items-center justify-between gap-2 p-2.5 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors text-left disabled:hover:bg-gray-50"
+                  data-testid={`action-${i}`}>
+                  <span className="text-[11px] text-gray-700">{a.t}</span>
+                  {a.nav && <ChevronRight size={13} className="text-gray-300 shrink-0" />}
+                </button>
+              ))}
+            </div>
+          </Panel>
+
+          <Panel title="Vehicule snapshot" testId="panel-snapshot"
+            action={<button onClick={() => onNavigate?.("vehicles")} className="text-[10px] text-blue-600 hover:underline flex items-center gap-0.5" data-testid="link-vehicles">Tous<ChevronRight size={11} /></button>}>
+            <table className="w-full text-[11px]">
+              <thead>
+                <tr className="text-[9px] uppercase tracking-wider text-gray-400 border-b border-gray-100">
+                  <th className="text-left py-1.5">Vehicule</th>
+                  <th className="text-left py-1.5">Statut</th>
+                  <th className="text-right py-1.5">Km</th>
+                </tr>
+              </thead>
+              <tbody>
+                {m.topByKm.map(v => {
+                  const sv = vehicles.find(x => x.tracker_id === v.tracker_id);
+                  const online = sv?.connection_status === "active";
+                  return (
+                    <tr key={v.tracker_id} className="border-b border-gray-50" data-testid={`snapshot-${v.tracker_id}`}>
+                      <td className="py-2 font-medium text-gray-800 truncate max-w-[120px]" title={v.label}>{v.label}</td>
+                      <td className="py-2">
+                        <span className={`inline-flex items-center gap-1 ${online ? "text-emerald-600" : "text-gray-400"}`}>
+                          <span className={`w-1.5 h-1.5 rounded-full ${online ? "bg-emerald-500" : "bg-gray-300"}`} />
+                          {online ? "Actif" : "Hors ligne"}
+                        </span>
+                      </td>
+                      <td className="py-2 text-right font-semibold tabular-nums" style={{ fontFamily: "Outfit, sans-serif" }}>{Math.round(v.period_mileage)} km</td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          </Panel>
+        </div>
+      </div>
+
+      {/* ═══ Source footer ═══ */}
+      <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 rounded-xl border border-gray-200">
+        <div className="w-2 h-2 rounded-full bg-emerald-500" />
+        <span className="text-[10px] text-gray-500">Donnees 100% Navixy — aucune estimation. Categories : sans activite 0% · sous-utilise &lt;30% · modere 30–59% · bonne 60–84% · forte ≥85% (jours actifs / jours periode).</span>
+        <span className="text-[10px] text-gray-400 ml-auto">{fromDate} au {toDate}</span>
+      </div>
     </div>
   );
 };
