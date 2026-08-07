@@ -30,7 +30,22 @@ Vue generale | Analyse flotte | Conducteurs | Vehicules | Couts | IoT | (Audit v
 - Anciens drawers Vue generale remplaces par navigation croisee vers les onglets detailles
 - Tests: iteration_11.json — 100% frontend + regression tous onglets
 
-## Analyse Flotte (Fusion Performance + Efficacite) — FINALISE
+## Analyse Flotte — REFONTE v2 "Analyse d'utilisation" (iter 12)
+- En-tete: titre + sous-titre arbitrage + filtre GROUPES NAVIXY reels (/api/groups nouveau, group_id
+  ajoute aux vehicules efficiency) — tout le contenu se recalcule sur le scope groupe (reset auto si groupe absent)
+- Zone 1 (6 KPI): Flotte active vs dormante (% + badge immobiles), 4 categories (compte+%+seuil, disabled a 0),
+  Intensite km moy./actif + volume total
+- Zone 2: Structure d'utilisation (barre empilee + legende interactive = filtre table),
+  Activite du parc (barres actifs/jour, couleur=intensite, ligne moyenne pointillee, clic=filtre jour)
+  — chart calcule cote client depuis daily_breakdown du scope
+- Zone 3: Recommandations deterministes (Equilibrage/Reduction/Concentration/Charge/Donnees,
+  AUCUN montant ou % invente) + rappel Score eco moyen du parc (moyenne notations Navixy plugin 46,
+  fetch lazy) + Synthese carburant (km/L/CHF depuis config uniquement, pas de pertes ralenti)
+- CONSERVE (iter 9): 5 categories aux seuils valides, table triable + 7 filtres + recherche,
+  drawer vehicule (calendrier, vs flotte), banniere filtre jour, footer seuils
+- Tests: iteration_12.json — 100% backend (7/7) + 100% frontend
+
+## Analyse Flotte (Fusion Performance + Efficacite) — v1 (iter 9, remplacee par v2 ci-dessus)
 - **Performance SUPPRIME** (100% doublons)
 - **Efficacite REMPLACE** par page fusionnee
 - Hierarchie: Total → Utilises / Sans activite → 4 sous-categories

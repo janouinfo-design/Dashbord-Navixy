@@ -148,6 +148,11 @@ export const AnalyseFlotteTab = ({ data, fromDate, toDate }) => {
     return opts;
   }, [groups, usedGroupIds]);
 
+  // Reset stale group filter if the group disappears from current period options
+  useEffect(() => {
+    if (groupFilter !== 'all' && !groupOptions.some(g => g.id === groupFilter)) setGroupFilter('all');
+  }, [groupOptions, groupFilter]);
+
   // ─── Scope = véhicules du groupe sélectionné ───
   const vehicles = useMemo(() =>
     groupFilter === 'all' ? allVehicles : allVehicles.filter(v => (v.group_id || 0) === groupFilter),
@@ -342,7 +347,7 @@ export const AnalyseFlotteTab = ({ data, fromDate, toDate }) => {
           const c = CAT_MAP[cid];
           const count = catCounts[cid] || 0;
           return (
-            <button key={cid} onClick={() => count > 0 && setCategory(cid)} data-testid={`kpi-cat-${cid}`}
+            <button key={cid} onClick={() => count > 0 && setCategory(cid)} data-testid={`kpi-cat-${cid}`} disabled={count === 0}
               className={`bg-white rounded-xl border p-3.5 text-left transition-all ${isActive(cid) ? 'ring-2 ring-[#111]' : 'border-gray-200'} ${count > 0 ? 'cursor-pointer hover:shadow-sm' : 'opacity-50 cursor-default'}`}>
               <div className="flex items-center gap-1.5 mb-1">
                 <span className={`w-2 h-2 rounded-full ${c.bg}`} />
