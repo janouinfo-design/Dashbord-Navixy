@@ -1,12 +1,12 @@
 """
-Eco-driving engine — Navixy plugin 46 ("Rapport sur la qualité de conduite").
+Eco-driving engine — LOGITRAK plugin 46 ("Rapport sur la qualité de conduite").
 
 RULES
-1. Score = Navixy native rating (0-100 raw + stars display), shown as-is. No conversion invented.
-2. Attribution driver <- vehicle ONLY via Navixy employee.tracker_id assignment.
+1. Score = LOGITRAK native rating (0-100 raw + stars display), shown as-is. No conversion invented.
+2. Attribution driver <- vehicle ONLY via LOGITRAK employee.tracker_id assignment.
    Vehicles without an assigned driver keep their events at vehicle level (unassigned_vehicles).
-3. Every value traceable: data -> Navixy endpoint -> method -> period.
-4. No arbitrary categories/thresholds. Stars come from Navixy's own rating string.
+3. Every value traceable: data -> LOGITRAK endpoint -> method -> period.
+4. No arbitrary categories/thresholds. Stars come from LOGITRAK's own rating string.
 """
 import asyncio
 import logging
@@ -113,14 +113,14 @@ def _track_duration_sec(track: dict) -> float:
 
 SOURCES = [
     {"data": "Score éco (notation + étoiles)", "source": "report/tracker/generate plugin 46 — Rapport sur la qualité de conduite",
-     "method": "Notation native Navixy 0–100 affichée telle quelle (aucune conversion LOGITRAK)",
-     "attribution": "Véhicule → conducteur via affectation Navixy (employee.tracker_id)"},
+     "method": "Notation native LOGITRAK 0–100 affichée telle quelle (aucune conversion appliquée)",
+     "attribution": "Véhicule → conducteur via affectation LOGITRAK (employee.tracker_id)"},
     {"data": "Pénalités par type (freinage, accélération, virage, ralenti, excès de vitesse)", "source": "Plugin 46, feuille véhicule (tables + graphique quotidien)",
-     "method": "Événements individuels Navixy avec date, adresse, coordonnées et pénalité",
+     "method": "Événements individuels LOGITRAK avec date, adresse, coordonnées et pénalité",
      "attribution": "Même règle — événements des véhicules sans conducteur assigné NON attribués"},
-    {"data": "Distance (km)", "source": "Plugin 46, kilométrage de la période", "method": "Valeur Navixy brute",
+    {"data": "Distance (km)", "source": "Plugin 46, kilométrage de la période", "method": "Valeur LOGITRAK brute",
      "attribution": "Par véhicule assigné"},
-    {"data": "Trajets et temps de conduite", "source": "track/list", "method": "Nombre de trajets Navixy; temps = somme(end_date - start_date) des trajets",
+    {"data": "Trajets et temps de conduite", "source": "track/list", "method": "Nombre de trajets LOGITRAK; temps = somme(end_date - start_date) des trajets",
      "attribution": "Par véhicule assigné"},
     {"data": "Indicateurs /100 km", "source": "Calcul LOGITRAK", "method": "nombre d'événements ÷ km période × 100 (affiché avec le nombre brut)",
      "attribution": "—"},
@@ -199,7 +199,7 @@ async def compute_driver_ecodriving(navixy, cache, navixy_hash: str, from_date: 
                     vehicle_sheets[eids[0]] = parsed
 
     def vehicle_stats(tid: int) -> dict:
-        """Score/penalties/distance for one tracker, from Navixy report."""
+        """Score/penalties/distance for one tracker, from LOGITRAK report."""
         label = trackers_map.get(tid)
         srow = summary_by_label.get(label, {})
         rating_raw = (srow.get('rating') or {}).get('raw')
@@ -312,7 +312,7 @@ async def compute_driver_ecodriving(navixy, cache, navixy_hash: str, from_date: 
     scores = [d['score']['raw'] for d in with_activity if d.get('score')]
     total_dist = round(sum(d['distance_km'] or 0 for d in with_activity), 1)
     total_pen = sum((d['penalties'] or {}).get('count', 0) for d in with_activity)
-    audit.computed("avg_score", "moyenne(notations Navixy des conducteurs avec activité)")
+    audit.computed("avg_score", "moyenne(notations LOGITRAK des conducteurs avec activité)")
     audit.computed("penalties_per_100km", "somme(nb pénalités) ÷ somme(km) × 100")
 
     result = {

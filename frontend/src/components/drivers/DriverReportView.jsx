@@ -350,7 +350,7 @@ export const DriverReportView = ({ onMenuClick }) => {
           {[
             { label: 'Conducteurs', value: totalDrivers, icon: Users, explanation: {
               title: 'Nombre de Conducteurs',
-              description: 'Nombre total de conducteurs enregistres dans le systeme Navixy pour cette flotte.',
+              description: 'Nombre total de conducteurs enregistres dans le systeme LOGITRAK pour cette flotte.',
               tip: 'Chaque conducteur est associe a un ou plusieurs vehicules via le systeme d\'identification (cle iButton, carte RFID, ou assignation manuelle).'
             }},
             { label: 'Score moyen', value: `${avgScore}%`, icon: Gauge, color: avgScore >= 50 ? 'text-emerald-600' : 'text-red-500', explanation: {

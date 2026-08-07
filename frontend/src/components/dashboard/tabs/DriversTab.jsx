@@ -57,12 +57,12 @@ const StatusBadge = ({ driver }) => {
   return <span className="inline-flex items-center gap-1 px-2 py-1 rounded-md text-[10px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-100" data-testid={`status-active-${driver.employee_id}`}>Données disponibles</span>;
 };
 
-// ---- Score display (Navixy native) ----
+// ---- Score display (LOGITRAK native) ----
 const ScoreDisplay = ({ score, size = "sm" }) => {
   if (!score) return <span className="text-gray-300">—</span>;
   const cls = scoreColor(score.stars);
   return (
-    <span className={`font-semibold ${cls} ${size === "lg" ? "text-xl" : "text-sm"}`} style={{ fontFamily: "Outfit, sans-serif" }} title="Notation native Navixy (plugin Qualité de conduite)">
+    <span className={`font-semibold ${cls} ${size === "lg" ? "text-xl" : "text-sm"}`} style={{ fontFamily: "Outfit, sans-serif" }} title="Notation native LOGITRAK (plugin Qualité de conduite)">
       {score.display}
     </span>
   );
@@ -118,7 +118,7 @@ const DriverDrawer = ({ driver, onClose }) => {
       <div className="p-6 space-y-6">
         {!driver.has_vehicle && (
           <div className="p-4 bg-gray-50 rounded-xl text-sm text-gray-500" data-testid="drawer-no-vehicle">
-            Ce conducteur n'a aucun véhicule assigné dans Navixy. Aucune donnée de conduite ne peut lui être attribuée.
+            Ce conducteur n'a aucun véhicule assigné dans LOGITRAK. Aucune donnée de conduite ne peut lui être attribuée.
           </div>
         )}
         {driver.has_vehicle && !driver.has_activity && (
@@ -134,7 +134,7 @@ const DriverDrawer = ({ driver, onClose }) => {
               <div>
                 <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Score éco-conduite</div>
                 <ScoreDisplay score={driver.score} size="lg" />
-                <div className="text-[10px] text-gray-400 mt-1">Notation native Navixy — Rapport « Qualité de conduite » (plugin 46), affichée telle quelle</div>
+                <div className="text-[10px] text-gray-400 mt-1">Notation native LOGITRAK — Rapport « Qualité de conduite » (plugin 46), affichée telle quelle</div>
               </div>
               <div className={`text-4xl font-bold ${scoreColor(driver.score?.stars)}`} style={{ fontFamily: "Outfit, sans-serif" }}>
                 {driver.score ? Math.round(driver.score.raw) : "—"}<span className="text-base text-gray-400 font-normal">/100</span>
@@ -178,19 +178,19 @@ const DriverDrawer = ({ driver, onClose }) => {
                 <ScoreReasonRow icon={Zap} label="Excès de vitesse"
                   main={ev.speeding.count > 0 ? `${ev.speeding.per_100km} /100 km` : "0"}
                   sub={ev.speeding.count > 0
-                    ? `${ev.speeding.count} événement${ev.speeding.count > 1 ? "s" : ""} retenu${ev.speeding.count > 1 ? "s" : ""} par Navixy`
-                    : "Aucun excès de vitesse retenu par Navixy sur la période"}
+                    ? `${ev.speeding.count} événement${ev.speeding.count > 1 ? "s" : ""} retenu${ev.speeding.count > 1 ? "s" : ""} par LOGITRAK`
+                    : "Aucun excès de vitesse retenu par LOGITRAK sur la période"}
                   testId="reason-speeding" />
               </div>
               <div className="mt-2 p-3 bg-blue-50 border border-blue-100 rounded-lg text-[10px] text-blue-700" data-testid="penalty-summary">
-                Pénalité totale Navixy : <strong>{driver.penalties.total}</strong> — {driver.penalties.count} pénalités, moyenne {driver.penalties.avg} par pénalité. Le score est calculé par Navixy à partir de ces pénalités.
+                Pénalité totale LOGITRAK : <strong>{driver.penalties.total}</strong> — {driver.penalties.count} pénalités, moyenne {driver.penalties.avg} par pénalité. Le score est calculé par LOGITRAK à partir de ces pénalités.
               </div>
             </div>
 
             {/* Evolution quotidienne */}
             {hasDailyData && (
               <div data-testid="drawer-daily-chart">
-                <h4 className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Pénalités par jour (Navixy)</h4>
+                <h4 className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Pénalités par jour (LOGITRAK)</h4>
                 <div className="bg-gray-50 rounded-xl p-3">
                   <ResponsiveContainer width="100%" height={200}>
                     <BarChart data={daily} barSize={18}>
@@ -223,7 +223,7 @@ const DriverDrawer = ({ driver, onClose }) => {
                     </div>
                     <div className="flex items-center gap-2 shrink-0 ml-2">
                       {e.penalty !== null && e.penalty !== undefined && (
-                        <span className="text-[10px] font-semibold text-gray-500 bg-white border border-gray-200 rounded px-1.5 py-0.5" title="Pénalité Navixy">-{Math.round(e.penalty * 10) / 10}</span>
+                        <span className="text-[10px] font-semibold text-gray-500 bg-white border border-gray-200 rounded px-1.5 py-0.5" title="Pénalité LOGITRAK">-{Math.round(e.penalty * 10) / 10}</span>
                       )}
                       {e.lat && e.lng && (
                         <a href={`https://www.google.com/maps?q=${e.lat},${e.lng}`} target="_blank" rel="noreferrer"
@@ -313,7 +313,7 @@ export const DriversTab = ({ fromDate, toDate }) => {
       <div className="flex items-center justify-center h-[calc(100vh-200px)]" data-testid="drivers-loading">
         <div className="flex flex-col items-center gap-3">
           <div className="w-6 h-6 border-2 border-gray-300 border-t-gray-800 rounded-full animate-spin" />
-          <span className="text-sm text-gray-400">Génération du rapport Navixy « Qualité de conduite »…</span>
+          <span className="text-sm text-gray-400">Génération du rapport LOGITRAK « Qualité de conduite »…</span>
         </div>
       </div>
     );
@@ -340,13 +340,13 @@ export const DriversTab = ({ fromDate, toDate }) => {
     <div className="p-4 lg:p-8 space-y-6 max-w-[1600px] mx-auto" data-testid="drivers-tab">
       {/* KPI */}
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-        <KPI label="Avec véhicule assigné" value={`${summary.drivers_with_vehicle}/${summary.drivers_total}`} sub="Affectation Navixy" icon={Users} testId="kpi-with-vehicle" />
+        <KPI label="Avec véhicule assigné" value={`${summary.drivers_with_vehicle}/${summary.drivers_total}`} sub="Affectation LOGITRAK" icon={Users} testId="kpi-with-vehicle" />
         <KPI label="Score éco moyen" value={summary.avg_score !== null && summary.avg_score !== undefined ? summary.avg_score : "—"}
-          sub={summary.avg_score !== null && summary.avg_score !== undefined ? "/100 — moyenne des notations Navixy" : "Aucune donnée"}
+          sub={summary.avg_score !== null && summary.avg_score !== undefined ? "/100 — moyenne des notations LOGITRAK" : "Aucune donnée"}
           icon={Gauge} color={summary.avg_score !== null && summary.avg_score !== undefined ? scoreColor(Math.ceil(summary.avg_score / 20)) : undefined} testId="kpi-avg-score" />
-        <KPI label="Pénalités /100 km" value={summary.penalties_per_100km ?? "—"} sub={`${summary.total_penalties || 0} pénalités Navixy au total`} icon={AlertTriangle} testId="kpi-penalties-100km" />
+        <KPI label="Pénalités /100 km" value={summary.penalties_per_100km ?? "—"} sub={`${summary.total_penalties || 0} pénalités LOGITRAK au total`} icon={AlertTriangle} testId="kpi-penalties-100km" />
         <KPI label="Distance attribuée" value={`${Math.round(summary.total_distance_km || 0)} km`} sub="Conducteurs avec activité" icon={MapPin} testId="kpi-distance" />
-        <KPI label="Trajets" value={summary.total_trips || 0} sub="track/list Navixy" icon={Route} testId="kpi-trips" />
+        <KPI label="Trajets" value={summary.total_trips || 0} sub="track/list LOGITRAK" icon={Route} testId="kpi-trips" />
         <KPI label="Temps de conduite" value={fmtDur(summary.total_driving_time_sec)} sub="Somme des trajets" icon={Clock} testId="kpi-driving-time" />
       </div>
 
@@ -413,7 +413,7 @@ export const DriversTab = ({ fromDate, toDate }) => {
             <h4 className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Véhicules avec activité sans conducteur assigné</h4>
           </div>
           <p className="text-[11px] text-gray-400 mb-4">
-            Ces événements restent au niveau véhicule et ne sont attribués à aucun conducteur — l'identité du conducteur au moment des événements n'est pas démontrable avec les données Navixy actuelles.
+            Ces événements restent au niveau véhicule et ne sont attribués à aucun conducteur — l'identité du conducteur au moment des événements n'est pas démontrable avec les données LOGITRAK actuelles.
           </p>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
             {unassigned.map((v) => (
@@ -446,7 +446,7 @@ export const DriversTab = ({ fromDate, toDate }) => {
           ))}
         </div>
         <p className="text-[10px] text-gray-400 mt-3">
-          Période : {payload?.period?.from} → {payload?.period?.to} — 100% données Navixy, aucune estimation. Le score éco est la notation native Navixy, sans conversion ni catégorisation LOGITRAK.
+          Période : {payload?.period?.from} → {payload?.period?.to} — 100% données LOGITRAK, aucune estimation. Le score éco est la notation native, affichée sans conversion ni catégorisation.
         </p>
       </div>
 

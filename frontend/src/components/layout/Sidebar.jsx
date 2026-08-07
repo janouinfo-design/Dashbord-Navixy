@@ -59,7 +59,7 @@ export const Sidebar = ({ activeModule, setActiveModule, isOpen, setIsOpen, clie
         {!collapsed && (
           <div className="p-4 border-t border-gray-100 flex-shrink-0">
             <div className="text-[9px] text-gray-400 uppercase tracking-widest">Plateforme</div>
-            <div className="text-xs font-medium text-gray-600 mt-0.5">Navixy IoT</div>
+            <div className="text-xs font-medium text-gray-600 mt-0.5">LOGITRAK IoT</div>
           </div>
         )}
       </aside>

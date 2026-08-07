@@ -1,5 +1,5 @@
 """
-Navixy Fleet Dashboard — Multi-Client API
+LOGITRAK Fleet Dashboard — Multi-Client API
 Slim route layer. All computation is delegated to AnalyticsEngine.
 """
 from fastapi import FastAPI, APIRouter, HTTPException, Query, Request
@@ -42,7 +42,7 @@ navixy = NavixyClient(NAVIXY_API_URL, DEFAULT_NAVIXY_HASH)
 cache = TenantCacheManager(ttl=300)
 engine = AnalyticsEngine(navixy, cache, db)
 
-app = FastAPI(title="Navixy Fleet Dashboard - Multi-Client")
+app = FastAPI(title="LOGITRAK Fleet Dashboard - Multi-Client")
 api_router = APIRouter(prefix="/api")
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
@@ -131,7 +131,7 @@ class FuelConfigUpdate(BaseModel):
 
 @api_router.get("/")
 async def root():
-    return {"message": "Navixy Fleet Dashboard API - Multi-Client", "engine_version": "1.0.0"}
+    return {"message": "LOGITRAK Fleet Dashboard API - Multi-Client", "engine_version": "1.0.0"}
 
 @api_router.post("/status", response_model=StatusCheck)
 async def create_status_check(input: StatusCheckCreate):
@@ -345,7 +345,7 @@ async def get_drivers_ecodriving(
     from_date: str = Query(..., description="YYYY-MM-DD"),
     to_date: str = Query(..., description="YYYY-MM-DD"),
 ):
-    """Suivi conducteur + éco-conduite — score natif Navixy plugin 46."""
+    """Suivi conducteur + éco-conduite — score natif LOGITRAK plugin 46."""
     h, tenant = await get_tenant_context(request)
     return await compute_driver_ecodriving(navixy, cache, h, from_date, to_date, tenant)
 
@@ -519,13 +519,13 @@ async def audit_compare(
     from_date: str = Query(..., description="YYYY-MM-DD"),
     to_date: str = Query(..., description="YYYY-MM-DD"),
 ):
-    """Compare engine-computed values vs raw Navixy for each vehicle."""
+    """Compare engine-computed values vs raw LOGITRAK for each vehicle."""
     h, tenant = await get_tenant_context(request)
 
     # 1. Get engine result (may be cached)
     engine_result = await engine.compute_fleet_stats(h, from_date, to_date, None, tenant)
 
-    # 2. Get RAW Navixy data directly (no engine processing)
+    # 2. Get RAW LOGITRAK data directly (no engine processing)
     import asyncio as _aio
     raw_navixy = NavixyClient(NAVIXY_API_URL, h)
     raw_navixy.reset_logs()
@@ -708,7 +708,7 @@ async def export_pdf(
 
     # Footer
     elements.append(Spacer(1, 10*mm))
-    elements.append(Paragraph("Donnees 100% Navixy — Analytics Engine v1.0.0 — Aucune estimation", sub_style))
+    elements.append(Paragraph("Donnees 100% LOGITRAK — Analytics Engine v1.0.0 — Aucune estimation", sub_style))
 
     doc.build(elements)
     buf.seek(0)

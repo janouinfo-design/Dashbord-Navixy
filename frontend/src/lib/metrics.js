@@ -1,6 +1,6 @@
 // ============ FLEET METRICS ENGINE v2 ============
 // Aligned with Analytics Engine v1.0.0
-// All values from Navixy or configurable parameters. No random, no estimation.
+// All values from LOGITRAK or configurable parameters. No random, no estimation.
 
 const FUEL_PRICE_CHF = 2.0; // Default — overridden via /api/config/fuel
 const IDLE_FUEL_RATE_LH = 1.5;

@@ -88,6 +88,11 @@ Vue generale | Analyse flotte | Conducteurs | Vehicules | Couts | IoT | (Audit v
 - Cache tenant 300s (1ere generation 5-45s)
 - Tests: iteration_10.json — 100% backend (9/9) + 100% frontend
 
+## White-label (iter 12b)
+- "Navixy" remplace par "LOGITRAK" dans TOUS les textes visibles (frontend, sources API, PDF, titre API)
+- Identifiants techniques conserves: navixy_client.py, NavixyClient, NAVIXY_API_URL/NAVIXY_HASH, cles JSON navixy_*
+- Regle pour la suite: ne plus ecrire "Navixy" dans les nouveaux textes UI — utiliser "LOGITRAK"
+
 ## Regles
 - `ACTIVE_DAY_THRESHOLD_KM = 1.0`
 - Categories: sans_activite(0%) | sous-utilise(<30%) | modere(30-59%) | bonne(60-84%) | forte(>=85%)

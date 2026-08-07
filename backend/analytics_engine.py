@@ -1,9 +1,9 @@
 """
 Analytics Engine v1.0.0
-Strict KPI computation with full Navixy traceability.
+Strict KPI computation with full LOGITRAK traceability.
 
 RULES
-1. Every value MUST originate from a Navixy endpoint.
+1. Every value MUST originate from a LOGITRAK endpoint.
 2. If data is unavailable → None  (frontend: "Donnée indisponible").
 3. Computed values declare formula + source fields in _audit.
 4. ZERO random numbers, ZERO hard-coded estimations.

@@ -237,7 +237,7 @@ export const DashboardView = ({ onMenuClick }) => {
             sparkData={distSparkData} sparkColor="#111" trend={8.7} trendLabel="vs sem."
             explanation={{
               title: 'Distance Totale',
-              description: 'Distance cumulee parcourue par tous les vehicules de la flotte sur la periode selectionnee. Calculee via l\'API Navixy tracker/stats/mileage.',
+              description: 'Distance cumulee parcourue par tous les vehicules de la flotte sur la periode selectionnee. Calculee via l\'API LOGITRAK tracker/stats/mileage.',
               tip: 'Comparez cette valeur d\'une semaine a l\'autre pour detecter des baisses d\'activite ou des pics inhabituels.'
             }} />
           <KPICard label="Conso. moyenne" value={summary.avgFuelEff} unit="L/100km" icon={Fuel}

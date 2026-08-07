@@ -35,7 +35,7 @@ export const AuditTab = ({ fromDate, toDate }) => {
           </div>
           <div>
             <h2 className="text-lg font-semibold" style={{ fontFamily: 'Outfit, sans-serif' }}>Page Audit</h2>
-            <p className="text-xs text-gray-500">Comparaison Dashboard vs donnees brutes Navixy</p>
+            <p className="text-xs text-gray-500">Comparaison Dashboard vs donnees brutes LOGITRAK</p>
           </div>
         </div>
         <button onClick={runAudit} disabled={loading}
@@ -56,7 +56,7 @@ export const AuditTab = ({ fromDate, toDate }) => {
         <div className="flex items-center justify-center py-20">
           <div className="flex flex-col items-center gap-3">
             <Loader2 size={24} className="animate-spin text-gray-400" />
-            <span className="text-sm text-gray-400">Audit en cours... (appels Navixy directs)</span>
+            <span className="text-sm text-gray-400">Audit en cours... (appels LOGITRAK directs)</span>
           </div>
         </div>
       )}
@@ -125,11 +125,11 @@ export const AuditTab = ({ fromDate, toDate }) => {
                   </tr>
                   <tr className="border-b border-gray-100 text-[9px] text-gray-400">
                     <th></th>
-                    <th className="px-2 py-1 text-center">Navixy</th>
+                    <th className="px-2 py-1 text-center">LOGITRAK</th>
                     <th className="px-2 py-1 text-center">Engine</th>
-                    <th className="px-2 py-1 text-center">Navixy</th>
+                    <th className="px-2 py-1 text-center">LOGITRAK</th>
                     <th className="px-2 py-1 text-center">Engine</th>
-                    <th className="px-2 py-1 text-center">Navixy</th>
+                    <th className="px-2 py-1 text-center">LOGITRAK</th>
                     <th className="px-2 py-1 text-center">Engine</th>
                     <th></th>
                   </tr>

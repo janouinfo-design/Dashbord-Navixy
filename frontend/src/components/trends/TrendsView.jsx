@@ -101,7 +101,7 @@ export const TrendsView = ({ onMenuClick }) => {
         {/* Summary */}
         <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
           <TrendKPI label="Distance Totale" value={`${trends?.summary?.total_distance || 0} km`} icon={MapPin} color="text-gray-900"
-            explanation={{ title: 'Distance Totale', description: 'Distance cumulee parcourue par tous les vehicules sur la periode selectionnee. Calculee a partir des donnees GPS Navixy.', tip: 'Comparez d\'une semaine a l\'autre pour detecter des variations d\'activite. Une baisse peut indiquer des vehicules en panne ou un changement d\'organisation.' }} />
+            explanation={{ title: 'Distance Totale', description: 'Distance cumulee parcourue par tous les vehicules sur la periode selectionnee. Calculee a partir des donnees GPS LOGITRAK.', tip: 'Comparez d\'une semaine a l\'autre pour detecter des variations d\'activite. Une baisse peut indiquer des vehicules en panne ou un changement d\'organisation.' }} />
           <TrendKPI label="Efficacite Moy." value={`${trends?.summary?.avg_efficiency || 0}%`} icon={Gauge} color="text-emerald-600"
             explanation={{ title: 'Efficacite Moyenne', description: 'Score moyen d\'efficacite de la flotte sur la periode. Combine le temps de conduite, le ralenti et l\'activite des vehicules.', tip: 'Un score > 60% est bon. En dessous de 40%, des actions correctives sont necessaires (formation conducteurs, optimisation itineraires).' }} />
           <TrendKPI label="Carburant Total" value={`${trends?.summary?.total_fuel || 0} L`} icon={Fuel} color="text-amber-600"

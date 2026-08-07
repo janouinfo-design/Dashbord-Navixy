@@ -137,7 +137,7 @@ export const AnalyseFlotteTab = ({ data, fromDate, toDate }) => {
   const period = effData.period || {};
   const threshold = effData.active_day_threshold_km || 1;
 
-  // ─── Groupes Navixy réels ───
+  // ─── Groupes LOGITRAK réels ───
   useEffect(() => {
     api.get(`${API}/groups`).then(res => { if (res.data.success) setGroups(res.data.groups || []); }).catch(() => setGroups([]));
   }, []);
@@ -205,7 +205,7 @@ export const AnalyseFlotteTab = ({ data, fromDate, toDate }) => {
     return maxA > 0 ? chartData.filter(d => d.active === maxA) : [];
   }, [chartData]);
 
-  // ─── Score éco moyen du parc (rappel minimal — Navixy plugin 46) ───
+  // ─── Score éco moyen du parc (rappel minimal — LOGITRAK plugin 46) ───
   const [eco, setEco] = useState({ loading: true, scores: null });
   useEffect(() => {
     let cancelled = false;
@@ -479,9 +479,9 @@ export const AnalyseFlotteTab = ({ data, fromDate, toDate }) => {
               <div>
                 <span className="text-[9px] font-semibold uppercase tracking-wider text-emerald-600">Eco-conduite</span>
                 <div className="text-[12px] text-gray-700">
-                  {eco.loading ? "Score eco du parc : calcul en cours (rapport Navixy)…"
-                    : ecoAvg ? <>Score eco moyen du parc : <strong>{ecoAvg.avg}/100</strong> — moyenne des notations Navixy (plugin 46) sur {ecoAvg.n} vehicule{ecoAvg.n > 1 ? 's' : ''} avec donnees</>
-                      : "Score eco indisponible sur la periode (aucune notation Navixy)"}
+                  {eco.loading ? "Score eco du parc : calcul en cours (rapport LOGITRAK)…"
+                    : ecoAvg ? <>Score eco moyen du parc : <strong>{ecoAvg.avg}/100</strong> — moyenne des notations LOGITRAK (plugin 46) sur {ecoAvg.n} vehicule{ecoAvg.n > 1 ? 's' : ''} avec donnees</>
+                      : "Score eco indisponible sur la periode (aucune notation LOGITRAK)"}
                 </div>
               </div>
             </div>
@@ -508,7 +508,7 @@ export const AnalyseFlotteTab = ({ data, fromDate, toDate }) => {
           </div>
           {fuel.available ? (
             <div className="text-[10px] text-gray-400 flex items-center gap-1.5">
-              <Fuel size={11} />Calcul : km reels Navixy × taux de consommation configure × prix CHF (onglet Couts). Aucune perte de ralenti estimee — historique ralenti non disponible.
+              <Fuel size={11} />Calcul : km reels LOGITRAK × taux de consommation configure × prix CHF (onglet Couts). Aucune perte de ralenti estimee — historique ralenti non disponible.
             </div>
           ) : (
             <div className="text-[10px] text-gray-400">
@@ -568,7 +568,7 @@ export const AnalyseFlotteTab = ({ data, fromDate, toDate }) => {
                   { col: 'active_days', label: 'Jours actifs' },
                   { col: 'period_mileage', label: 'Distance' },
                   { col: 'km_per_active_day', label: 'km/jour actif' },
-                  { col: 'engine_hours', label: 'Moteur (total)', tip: 'Compteur cumulatif total du moteur. Non limite a la periode selectionnee. Donnee Navixy brute.' },
+                  { col: 'engine_hours', label: 'Moteur (total)', tip: 'Compteur cumulatif total du moteur. Non limite a la periode selectionnee. Donnee LOGITRAK brute.' },
                 ].map(h => (
                   <th key={h.col} onClick={() => toggleSort(h.col)} className={`px-3 py-2.5 text-left text-[10px] font-medium uppercase tracking-wider text-gray-400 cursor-pointer hover:text-gray-600 select-none ${h.cls || ''}`}>
                     <span className="flex items-center gap-1">{h.tip ? <Tip label={h.label} def={h.tip}><span>{h.label}</span></Tip> : h.label}{filters.sortBy === h.col && (filters.sortDir === 'asc' ? <ChevronUp size={10} /> : <ChevronDown size={10} />)}</span>
@@ -616,7 +616,7 @@ export const AnalyseFlotteTab = ({ data, fromDate, toDate }) => {
       {/* ═══ DATA SOURCE ═══ */}
       <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 rounded-xl border border-gray-200">
         <span className="w-2 h-2 rounded-full bg-emerald-500" />
-        <span className="text-[10px] text-gray-500">Jour actif = distance &ge; {threshold} km. Seuils : sous-utilise (&lt;30%) | modere (30–59%) | bonne (60–84%) | forte (&ge;85%). Moteur = compteur cumulatif total. Groupes = tracker/group/list Navixy. Donnees Navixy.</span>
+        <span className="text-[10px] text-gray-500">Jour actif = distance &ge; {threshold} km. Seuils : sous-utilise (&lt;30%) | modere (30–59%) | bonne (60–84%) | forte (&ge;85%). Moteur = compteur cumulatif total. Groupes = tracker/group/list LOGITRAK. Donnees LOGITRAK.</span>
       </div>
 
       {/* ═══ VEHICLE DRAWER ═══ */}

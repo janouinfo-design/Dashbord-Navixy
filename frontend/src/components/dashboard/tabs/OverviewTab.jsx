@@ -99,7 +99,7 @@ export const OverviewTab = ({ data, fromDate, toDate, onNavigate }) => {
     return () => { cancelled = true; };
   }, [fromDate, toDate]);
 
-  // ---- Previous period (real Navixy data via /fleet/efficiency) ----
+  // ---- Previous period (real LOGITRAK data via /fleet/efficiency) ----
   const prevPeriod = useMemo(() => prevRange(fromDate, toDate), [fromDate, toDate]);
   const [prevEff, setPrevEff] = useState(null);
   useEffect(() => {
@@ -193,7 +193,7 @@ export const OverviewTab = ({ data, fromDate, toDate, onNavigate }) => {
     const lowEco = (eco.data?.drivers || []).filter(d => d.score && d.score.stars <= 2);
     if (lowEco.length > 0) list.push({
       id: "loweco", sev: "red",
-      title: `${lowEco.length} conducteur${lowEco.length > 1 ? "s" : ""} avec notation eco faible (≤ 2 etoiles Navixy)`,
+      title: `${lowEco.length} conducteur${lowEco.length > 1 ? "s" : ""} avec notation eco faible (≤ 2 etoiles LOGITRAK)`,
       detail: lowEco.map(d => d.driver_name).join(", "),
       nav: "drivers",
     });
@@ -414,7 +414,7 @@ export const OverviewTab = ({ data, fromDate, toDate, onNavigate }) => {
               ))}
             </div>
           )}
-          <div className="text-[9px] text-gray-400 mt-3">Regles deterministes sur donnees Navixy — aucun seuil arbitraire non documente</div>
+          <div className="text-[9px] text-gray-400 mt-3">Regles deterministes sur donnees LOGITRAK — aucun seuil arbitraire non documente</div>
         </Panel>
 
         {/* Conducteurs & score eco */}
@@ -423,7 +423,7 @@ export const OverviewTab = ({ data, fromDate, toDate, onNavigate }) => {
           {eco.loading ? (
             <div className="flex flex-col items-center justify-center py-8 gap-2">
               <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-800 rounded-full animate-spin" />
-              <span className="text-[10px] text-gray-400">Rapport Navixy « Qualite de conduite »…</span>
+              <span className="text-[10px] text-gray-400">Rapport LOGITRAK « Qualite de conduite »…</span>
             </div>
           ) : ecoDrivers.length === 0 ? (
             <div className="text-xs text-gray-400 py-6 text-center">Aucune donnee eco-conduite attribuable sur la periode</div>
@@ -439,12 +439,12 @@ export const OverviewTab = ({ data, fromDate, toDate, onNavigate }) => {
                     <div className="text-xs font-medium text-gray-900 truncate">{d.driver_name}</div>
                     <div className="text-[10px] text-gray-400">{Math.round(d.distance_km)} km · {d.trips_count} trajets</div>
                   </div>
-                  <span className={`text-xs font-semibold ${starColorCls(d.score.stars)}`} style={{ fontFamily: "Outfit, sans-serif" }} title="Notation native Navixy">{d.score.display}</span>
+                  <span className={`text-xs font-semibold ${starColorCls(d.score.stars)}`} style={{ fontFamily: "Outfit, sans-serif" }} title="Notation native LOGITRAK">{d.score.display}</span>
                 </button>
               ))}
             </div>
           )}
-          <div className="text-[9px] text-gray-400 mt-3">Score natif Navixy — Rapport « Qualite de conduite » (plugin 46)</div>
+          <div className="text-[9px] text-gray-400 mt-3">Score natif LOGITRAK — Rapport « Qualite de conduite » (plugin 46)</div>
         </Panel>
 
         {/* Actions + snapshot */}
@@ -498,7 +498,7 @@ export const OverviewTab = ({ data, fromDate, toDate, onNavigate }) => {
       {/* ═══ Source footer ═══ */}
       <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 rounded-xl border border-gray-200">
         <div className="w-2 h-2 rounded-full bg-emerald-500" />
-        <span className="text-[10px] text-gray-500">Donnees 100% Navixy — aucune estimation. Categories : sans activite 0% · sous-utilise &lt;30% · modere 30–59% · bonne 60–84% · forte ≥85% (jours actifs / jours periode).{pm ? ` Comparaison vs periode precedente : ${prevPeriod.from} au ${prevPeriod.to}.` : ""}</span>
+        <span className="text-[10px] text-gray-500">Donnees 100% LOGITRAK — aucune estimation. Categories : sans activite 0% · sous-utilise &lt;30% · modere 30–59% · bonne 60–84% · forte ≥85% (jours actifs / jours periode).{pm ? ` Comparaison vs periode precedente : ${prevPeriod.from} au ${prevPeriod.to}.` : ""}</span>
         <span className="text-[10px] text-gray-400 ml-auto">{fromDate} au {toDate}</span>
       </div>
     </div>
