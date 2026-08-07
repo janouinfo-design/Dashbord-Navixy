@@ -8,8 +8,7 @@ import {
 } from "lucide-react";
 
 import { OverviewTab } from "@/components/dashboard/tabs/OverviewTab";
-import { PerformanceTab } from "@/components/dashboard/tabs/PerformanceTab";
-import { EfficiencyTab } from "@/components/dashboard/tabs/EfficiencyTab";
+import { AnalyseFlotteTab } from "@/components/dashboard/tabs/AnalyseFlotteTab";
 import { DriversTab } from "@/components/dashboard/tabs/DriversTab";
 import { VehiclesTab } from "@/components/dashboard/tabs/VehiclesTab";
 import { CostsTab } from "@/components/dashboard/tabs/CostsTab";
@@ -21,8 +20,7 @@ const initFrom = () => { const d = new Date(); d.setDate(d.getDate() - 6); retur
 
 const TABS = [
   { id: "overview", label: "Vue generale", icon: BarChart3 },
-  { id: "performance", label: "Performance", icon: Gauge },
-  { id: "efficiency", label: "Efficacite", icon: Activity },
+  { id: "analyse", label: "Analyse flotte", icon: Gauge },
   { id: "drivers", label: "Conducteurs", icon: Users },
   { id: "vehicles", label: "Vehicules", icon: Truck },
   { id: "costs", label: "Couts", icon: DollarSign },
@@ -145,8 +143,7 @@ export const DashboardLayout = () => {
         ) : (
           <>
             {activeTab === "overview" && <OverviewTab data={data} debugMode={debugMode} fromDate={fromDate} toDate={toDate} onNavigate={handleTabNavigate} />}
-            {activeTab === "performance" && <PerformanceTab data={data} debugMode={debugMode} />}
-            {activeTab === "efficiency" && <EfficiencyTab data={data} debugMode={debugMode} />}
+            {activeTab === "analyse" && <AnalyseFlotteTab data={data} debugMode={debugMode} />}
             {activeTab === "drivers" && <DriversTab data={data} fromDate={fromDate} toDate={toDate} debugMode={debugMode} />}
             {activeTab === "vehicles" && <VehiclesTab data={data} debugMode={debugMode} />}
             {activeTab === "costs" && <CostsTab data={data} onRefresh={() => fetchAll()} debugMode={debugMode} />}

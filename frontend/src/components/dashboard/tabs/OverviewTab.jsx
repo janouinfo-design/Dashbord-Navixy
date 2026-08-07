@@ -337,7 +337,7 @@ export const OverviewTab = ({ data, debugMode, fromDate, toDate, onNavigate }) =
           <DashboardDetailDrawer
             title={`${Math.round(kpis.totalKm).toLocaleString('fr-FR')} km parcourus`}
             subtitle={`${(new Date(toDate) - new Date(fromDate)) / 86400000 + 1} jours • ${kpis.total} vehicules`}
-            onClose={() => setActiveDrawer(null)} linkLabel="Analyse complete (Performance)" onLinkClick={() => { setActiveDrawer(null); onNavigate?.('performance'); }}>
+            onClose={() => setActiveDrawer(null)} linkLabel="Analyse complete" onLinkClick={() => { setActiveDrawer(null); onNavigate?.('analyse'); }}>
             <div className="grid grid-cols-2 gap-3 mb-5 p-3 bg-gray-50 rounded-xl">
               <Stat label="Distance totale" value={`${Math.round(kpis.totalKm).toLocaleString('fr-FR')} km`} />
               <Stat label="Moy. / vehicule" value={`${kpis.total > 0 ? Math.round(kpis.totalKm / kpis.total) : 0} km`} />
@@ -423,7 +423,7 @@ export const OverviewTab = ({ data, debugMode, fromDate, toDate, onNavigate }) =
         <DashboardDetailDrawer
           title={`Utilisation flotte : ${kpis.avgUtil}%`}
           subtitle={`${fromDate} au ${toDate}`}
-          onClose={() => setActiveDrawer(null)} linkLabel="Analyse complete (Efficacite)" onLinkClick={() => { setActiveDrawer(null); onNavigate?.('efficiency'); }}>
+          onClose={() => setActiveDrawer(null)} linkLabel="Analyse complete (Analyse flotte)" onLinkClick={() => { setActiveDrawer(null); onNavigate?.('analyse'); }}>
           <div className="grid grid-cols-3 gap-3 mb-5 p-3 bg-gray-50 rounded-xl">
             <Stat label="Utilisation moy." value={`${kpis.avgUtil}%`} />
             <Stat label="Utilises" value={compVehicles.filter(v => (v.total_distance_week || 0) > 0).length} />
@@ -484,7 +484,7 @@ export const OverviewTab = ({ data, debugMode, fromDate, toDate, onNavigate }) =
         <DashboardDetailDrawer
           title={`${kpis.lowUtil.length} vehicule${kpis.lowUtil.length > 1 ? 's' : ''} sous-utilise${kpis.lowUtil.length > 1 ? 's' : ''}`}
           subtitle={`Utilisation < 30% (moy. flotte : ${kpis.avgUtil}%)`}
-          onClose={() => setActiveDrawer(null)} linkLabel="Analyse (Efficacite)" onLinkClick={() => { setActiveDrawer(null); onNavigate?.('efficiency'); }}>
+          onClose={() => setActiveDrawer(null)} linkLabel="Analyse flotte" onLinkClick={() => { setActiveDrawer(null); onNavigate?.('analyse'); }}>
           <div className="space-y-2">
             {kpis.lowUtil.map(v => (
               <div key={v.tracker_id} className="rounded-xl border border-gray-200 bg-white p-3.5">
