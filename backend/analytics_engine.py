@@ -225,6 +225,23 @@ class AnalyticsEngine:
     # 2. FLEET EFFICIENCY  (replaces /fleet/efficiency)
     # ──────────────────────────────────────────────────
 
+    ACTIVE_DAY_THRESHOLD_KM = 1.0  # Minimum km to count a day as "active"
+
+    UTIL_CATEGORIES = [
+        (0, 0, "inactif"),
+        (0.01, 30, "sous_utilise"),
+        (30, 60, "modere"),
+        (60, 85, "bonne"),
+        (85, 101, "tres_utilise"),
+    ]
+
+    @staticmethod
+    def _classify(util_pct: float) -> str:
+        for lo, hi, label in AnalyticsEngine.UTIL_CATEGORIES:
+            if lo <= util_pct < hi:
+                return label
+        return "tres_utilise" if util_pct >= 85 else "inactif"
+
     async def compute_fleet_efficiency(
         self, navixy_hash: str, from_date: str, to_date: str, tenant: str,
     ) -> dict:
@@ -250,24 +267,32 @@ class AnalyticsEngine:
         d_to = datetime.strptime(to_date, '%Y-%m-%d')
         days_count = max((d_to - d_from).days + 1, 1)
 
+        # Generate all date strings for the period
+        period_dates = [(d_from + timedelta(days=i)).strftime('%Y-%m-%d') for i in range(days_count)]
+
         states_t = self.navixy.get_tracker_states_batch(tid_list, navixy_hash)
         mileage_t = self.navixy.get_mileage(tid_list, f"{from_date} 00:00:00", f"{to_date} 23:59:59", navixy_hash)
-        states_map, mileage_raw = await asyncio.gather(states_t, mileage_t)
+        eh_t = self.navixy.get_counters(tid_list, "engine_hours", navixy_hash)
+        states_map, mileage_raw, eh_raw = await asyncio.gather(states_t, mileage_t, eh_t)
 
-        audit.real("vehicle_states", "tracker/get_state (batch, instantané)")
+        audit.real("vehicle_states", "tracker/get_state (batch)")
         audit.real("period_mileage", "tracker/stats/mileage/read")
-        audit.unavailable("driving_time", "Données historiques de temps de conduite non disponibles via l'API snapshot")
-        audit.unavailable("idle_time", "Données historiques de temps de ralenti non disponibles via l'API snapshot")
-        audit.unavailable("stopped_time", "Données historiques non disponibles via l'API snapshot")
+        audit.real("engine_hours", "tracker/counter/value/list[engine_hours]")
+        audit.unavailable("driving_time", "Historique non disponible via snapshot API")
+        audit.unavailable("idle_time_historical", "Historique ralenti non disponible via snapshot API")
+        audit.unavailable("trips", "Nombre de trajets non disponible via cette API")
 
-        # Parse mileage for utilization
-        tracker_daily_mileage: Dict[str, Dict[str, float]] = {}
+        # Parse mileage per vehicle per day
+        tracker_daily: Dict[str, Dict[str, float]] = {}
         if mileage_raw.get('success'):
-            for ts, days in mileage_raw.get('result', {}).items():
-                tracker_daily_mileage[ts] = {}
-                for d_str, info in days.items():
+            for ts, days_data in mileage_raw.get('result', {}).items():
+                tracker_daily[ts] = {}
+                for d_str, info in days_data.items():
                     if info and isinstance(info, dict):
-                        tracker_daily_mileage[ts][d_str] = info.get('mileage', 0)
+                        tracker_daily[ts][d_str] = info.get('mileage', 0)
+
+        eh_vals = eh_raw.get('value', {}) if eh_raw.get('success') else {}
+        threshold = self.ACTIVE_DAY_THRESHOLD_KM
 
         vehicles = []
         for tracker in tracker_list:
@@ -277,41 +302,76 @@ class AnalyticsEngine:
             gps = state.get('gps', {})
             movement = state.get('movement_status', 'unknown')
             connection = state.get('connection_status', 'unknown')
+            engine_h = eh_vals.get(ts) or 0
 
-            # Utilization: days with mileage > 0 / total days
-            daily = tracker_daily_mileage.get(ts, {})
-            active_days = sum(1 for km in daily.values() if km > 0)
+            daily = tracker_daily.get(ts, {})
+            # Build daily breakdown for activity calendar
+            daily_breakdown = []
+            active_days = 0
+            total_km = 0.0
+            for ds in period_dates:
+                km = daily.get(ds, 0)
+                is_active = km >= threshold
+                if is_active:
+                    active_days += 1
+                total_km += km
+                daily_breakdown.append({"date": ds, "km": round(km, 1), "active": is_active})
+
+            total_km = round(total_km, 1)
             utilization_pct = round((active_days / days_count) * 100, 1) if days_count > 0 else 0
-            total_km = round(sum(daily.values()), 1)
+            km_per_active_day = round(total_km / active_days, 1) if active_days > 0 else 0
+            category = self._classify(utilization_pct)
 
             vehicles.append({
                 "tracker_id": tid,
                 "label": tracker['label'],
+                "model": tracker.get('source', {}).get('model', 'Unknown'),
                 "utilization_pct": utilization_pct,
+                "category": category,
                 "active_days": active_days,
                 "total_days": days_count,
                 "period_mileage": total_km,
+                "km_per_active_day": km_per_active_day,
+                "engine_hours": round(engine_h, 1),
+                "daily_breakdown": daily_breakdown,
                 "movement_status": movement,
                 "connection_status": connection,
                 "speed": gps.get('speed', 0),
-                # Historical time breakdowns: unavailable
-                "driving_time": None,
+                "last_update": gps.get('updated'),
                 "idle_time": None,
+                "driving_time": None,
                 "stopped_time": None,
             })
 
         n = len(vehicles) or 1
         avg_util = round(sum(v['utilization_pct'] for v in vehicles) / n, 1)
+        total_fleet_km = round(sum(v['period_mileage'] for v in vehicles), 1)
+        total_fleet_eh = round(sum(v['engine_hours'] for v in vehicles), 1)
+        used_vehicles = sum(1 for v in vehicles if v['active_days'] > 0)
+        inactive_vehicles = n - used_vehicles
+
+        # Category counts
+        cat_counts = {}
+        for v in vehicles:
+            cat_counts[v['category']] = cat_counts.get(v['category'], 0) + 1
 
         result = {
             "success": True,
             "period": {"from": from_date, "to": to_date, "days": days_count},
+            "active_day_threshold_km": threshold,
             "summary": {
                 "average_utilization_pct": avg_util,
                 "total_vehicles": len(vehicles),
+                "used_vehicles": used_vehicles,
+                "inactive_vehicles": inactive_vehicles,
+                "total_mileage": total_fleet_km,
+                "avg_mileage_per_vehicle": round(total_fleet_km / n, 1),
+                "total_engine_hours": total_fleet_eh,
+                "avg_engine_hours_per_vehicle": round(total_fleet_eh / n, 1),
                 "currently_moving": sum(1 for v in vehicles if v['movement_status'] == 'moving'),
                 "currently_idle": sum(1 for v in vehicles if v['movement_status'] == 'idle'),
                 "currently_stopped": sum(1 for v in vehicles if v['movement_status'] in ('stopped', 'parked', 'unknown')),
+                "categories": cat_counts,
             },
             "vehicles": vehicles,
             "_audit": audit.build(self.navixy.get_logs(), False, 0),
