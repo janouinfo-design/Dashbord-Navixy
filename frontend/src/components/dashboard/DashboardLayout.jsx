@@ -3,7 +3,7 @@ import { API, api } from "@/lib/api";
 import { Header } from "@/components/layout/Header";
 import { PeriodSelector } from "@/components/shared/PeriodSelector";
 import {
-  BarChart3, Gauge, Users, Truck, DollarSign, Cpu, Activity,
+  BarChart3, Gauge, Users, Truck, Activity,
   ShieldCheck, Code, FileText
 } from "lucide-react";
 
@@ -11,8 +11,6 @@ import { OverviewTab } from "@/components/dashboard/tabs/OverviewTab";
 import { AnalyseFlotteTab } from "@/components/dashboard/tabs/AnalyseFlotteTab";
 import { DriversTab } from "@/components/dashboard/tabs/DriversTab";
 import { VehiclesTab } from "@/components/dashboard/tabs/VehiclesTab";
-import { CostsTab } from "@/components/dashboard/tabs/CostsTab";
-import { IoTTab } from "@/components/dashboard/tabs/IoTTab";
 import { AuditTab } from "@/components/dashboard/tabs/AuditTab";
 
 const fmt = (d) => d.toISOString().split('T')[0];
@@ -23,8 +21,6 @@ const TABS = [
   { id: "analyse", label: "Analyse flotte", icon: Gauge },
   { id: "drivers", label: "Conducteurs", icon: Users },
   { id: "vehicles", label: "Vehicules", icon: Truck },
-  { id: "costs", label: "Couts", icon: DollarSign },
-  { id: "iot", label: "IoT", icon: Cpu },
 ];
 const ADMIN_TAB = { id: "audit", label: "Audit", icon: ShieldCheck };
 
@@ -144,8 +140,6 @@ export const DashboardLayout = () => {
             {activeTab === "analyse" && <AnalyseFlotteTab data={data} fromDate={fromDate} toDate={toDate} debugMode={debugMode} />}
             {activeTab === "drivers" && <DriversTab data={data} fromDate={fromDate} toDate={toDate} debugMode={debugMode} />}
             {activeTab === "vehicles" && <VehiclesTab data={data} debugMode={debugMode} />}
-            {activeTab === "costs" && <CostsTab data={data} onRefresh={() => fetchAll()} debugMode={debugMode} />}
-            {activeTab === "iot" && <IoTTab />}
             {activeTab === "audit" && <AuditTab fromDate={fromDate} toDate={toDate} />}
           </>
         )}

@@ -508,11 +508,11 @@ export const AnalyseFlotteTab = ({ data, fromDate, toDate }) => {
           </div>
           {fuel.available ? (
             <div className="text-[10px] text-gray-400 flex items-center gap-1.5">
-              <Fuel size={11} />Calcul : km reels LOGITRAK × taux de consommation configure × prix CHF (onglet Couts). Aucune perte de ralenti estimee — historique ralenti non disponible.
+              <Fuel size={11} />Calcul : km reels LOGITRAK × taux de consommation configure × prix CHF. Aucune perte de ralenti estimee — historique ralenti non disponible.
             </div>
           ) : (
             <div className="text-[10px] text-gray-400">
-              Consommation et cout indisponibles — configurer un taux de consommation dans l'onglet Couts. Aucune valeur estimee ne sera affichee sans configuration.
+              Consommation et cout indisponibles — aucun taux de consommation configure. Aucune valeur estimee ne sera affichee sans configuration.
             </div>
           )}
         </div>

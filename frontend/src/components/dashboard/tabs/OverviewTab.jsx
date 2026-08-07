@@ -357,11 +357,11 @@ export const OverviewTab = ({ data, fromDate, toDate, onNavigate }) => {
                   <span className="text-gray-600">Cout carburant (periode)</span>
                   <span className="font-semibold text-red-500" style={{ fontFamily: "Outfit, sans-serif" }}>{Math.round(m.fuelCHF)} CHF</span>
                 </div>
-                <div className="text-[9px] text-gray-400">Base : km reels × taux configure (onglet Couts)</div>
+                <div className="text-[9px] text-gray-400">Base : km reels × taux de consommation configure</div>
               </>
             ) : (
               <div className="text-[10px] text-gray-400">
-                Cout carburant indisponible — configurer un taux de consommation dans l'onglet <button onClick={() => onNavigate?.("costs")} className="text-blue-600 hover:underline" data-testid="link-configure-fuel">Couts</button>.
+                Cout carburant indisponible — aucun taux de consommation configure. Aucune valeur estimee ne sera affichee.
               </div>
             )}
           </div>

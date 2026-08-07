@@ -88,6 +88,13 @@ Vue generale | Analyse flotte | Conducteurs | Vehicules | Couts | IoT | (Audit v
 - Cache tenant 300s (1ere generation 5-45s)
 - Tests: iteration_10.json — 100% backend (9/9) + 100% frontend
 
+## Onglets supprimes (iter 12c)
+- Onglets "Couts" et "IoT" RETIRES de la navigation (demande utilisateur)
+- Fichiers CostsTab.jsx / IoTTab.jsx conserves sur disque mais non importes (retour facile si besoin)
+- Endpoints backend carburant/config conserves — le taux configure continue d'alimenter les calculs CHF
+- References "onglet Couts" nettoyees dans OverviewTab (lien navigation retire) et AnalyseFlotteTab
+- Onglets restants: Vue generale, Analyse flotte, Conducteurs, Vehicules (+ Audit en ?admin=true)
+
 ## White-label (iter 12b)
 - "Navixy" remplace par "LOGITRAK" dans TOUS les textes visibles (frontend, sources API, PDF, titre API)
 - Identifiants techniques conserves: navixy_client.py, NavixyClient, NAVIXY_API_URL/NAVIXY_HASH, cles JSON navixy_*
