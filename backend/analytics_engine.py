@@ -237,10 +237,15 @@ class AnalyticsEngine:
 
     @staticmethod
     def _classify(util_pct: float) -> str:
-        for lo, hi, label in AnalyticsEngine.UTIL_CATEGORIES:
-            if lo <= util_pct < hi:
-                return label
-        return "tres_utilise" if util_pct >= 85 else "inactif"
+        if util_pct == 0:
+            return "inactif"
+        if util_pct < 30:
+            return "sous_utilise"
+        if util_pct < 60:
+            return "modere"
+        if util_pct < 85:
+            return "bonne"
+        return "tres_utilise"
 
     async def compute_fleet_efficiency(
         self, navixy_hash: str, from_date: str, to_date: str, tenant: str,

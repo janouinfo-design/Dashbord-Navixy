@@ -295,7 +295,7 @@ export const EfficiencyTab = ({ data, debugMode }) => {
           { id: 'used', label: `Utilises (${summary.used_vehicles || 0})` },
           { id: 'inactive', label: `Sans activite (${summary.inactive_vehicles || 0})` },
           { id: 'sous_utilise', label: `Sous-utilises (${catCounts.sous_utilise || 0})` },
-          { id: 'tres_utilise', label: `Tres utilises (${(catCounts.tres_utilise || 0) + (catCounts.bonne || 0)})` },
+          { id: 'tres_utilise', label: `Fortement utilises (${(catCounts.tres_utilise || 0) + (catCounts.bonne || 0)})` },
         ].map(f => (
           <button key={f.id} onClick={() => setFilter(f.id)} data-testid={`eff-filter-${f.id}`}
             className={`px-3 py-2 text-xs font-medium rounded-lg border transition-colors ${
