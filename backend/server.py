@@ -260,6 +260,14 @@ async def get_tracker_readings(tracker_id: int, request: Request):
     h, _ = await get_tenant_context(request)
     return await navixy.get_tracker_readings(tracker_id, h)
 
+@api_router.get("/groups")
+async def get_groups(request: Request):
+    h, _ = await get_tenant_context(request)
+    data = await navixy.get_groups(h)
+    if data.get('success'):
+        return {"success": True, "groups": [{"id": g['id'], "title": g['title']} for g in data.get('list', [])]}
+    return {"success": False, "error": "Échec récupération groupes"}
+
 # ============ EMPLOYEES (passthrough) ============
 
 @api_router.get("/employees")

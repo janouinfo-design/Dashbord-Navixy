@@ -141,7 +141,7 @@ export const DashboardLayout = () => {
         ) : (
           <>
             {activeTab === "overview" && <OverviewTab data={data} debugMode={debugMode} fromDate={fromDate} toDate={toDate} onNavigate={handleTabNavigate} />}
-            {activeTab === "analyse" && <AnalyseFlotteTab data={data} debugMode={debugMode} />}
+            {activeTab === "analyse" && <AnalyseFlotteTab data={data} fromDate={fromDate} toDate={toDate} debugMode={debugMode} />}
             {activeTab === "drivers" && <DriversTab data={data} fromDate={fromDate} toDate={toDate} debugMode={debugMode} />}
             {activeTab === "vehicles" && <VehiclesTab data={data} debugMode={debugMode} />}
             {activeTab === "costs" && <CostsTab data={data} onRefresh={() => fetchAll()} debugMode={debugMode} />}

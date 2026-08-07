@@ -331,6 +331,7 @@ class AnalyticsEngine:
                 "tracker_id": tid,
                 "label": tracker['label'],
                 "model": tracker.get('source', {}).get('model', 'Unknown'),
+                "group_id": tracker.get('group_id', 0),
                 "utilization_pct": utilization_pct,
                 "category": category,
                 "active_days": active_days,
