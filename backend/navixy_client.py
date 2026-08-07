@@ -120,3 +120,25 @@ class NavixyClient:
 
     async def get_tracker_readings(self, tracker_id: int, h: str) -> dict:
         return await self.request("tracker/readings/list", {"tracker_id": tracker_id}, navixy_hash=h)
+
+    async def get_tracks(self, tracker_id: int, from_dt: str, to_dt: str, h: str) -> dict:
+        return await self.request("track/list", {
+            "tracker_id": tracker_id, "from": from_dt, "to": to_dt
+        }, navixy_hash=h)
+
+    async def generate_report(self, tracker_ids: List[int], from_dt: str, to_dt: str, plugin_id: int, title: str, h: str) -> dict:
+        return await self.request("report/tracker/generate", {
+            "trackers": tracker_ids, "from": from_dt, "to": to_dt,
+            "time_filter": {"from": "00:00:00", "to": "23:59:59", "weekdays": [1, 2, 3, 4, 5, 6, 7]},
+            "title": title, "geocoder": "google",
+            "plugin": {"plugin_id": plugin_id},
+        }, navixy_hash=h)
+
+    async def get_report_status(self, report_id: int, h: str) -> dict:
+        return await self.request("report/tracker/status", {"report_id": report_id}, navixy_hash=h)
+
+    async def retrieve_report(self, report_id: int, h: str) -> dict:
+        return await self.request("report/tracker/retrieve", {"report_id": report_id}, navixy_hash=h)
+
+    async def delete_report(self, report_id: int, h: str) -> dict:
+        return await self.request("report/tracker/delete", {"report_id": report_id}, navixy_hash=h)

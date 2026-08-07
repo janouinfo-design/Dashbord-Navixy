@@ -22,6 +22,7 @@ from datetime import datetime, timezone
 from navixy_client import NavixyClient
 from cache_manager import TenantCacheManager
 from analytics_engine import AnalyticsEngine
+from ecodriving import compute_driver_ecodriving
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -329,6 +330,16 @@ async def get_driver_report(
 ):
     h, tenant = await get_tenant_context(request)
     return await engine.compute_driver_report(h, from_date, to_date, employee_id, tenant)
+
+@api_router.get("/drivers/ecodriving")
+async def get_drivers_ecodriving(
+    request: Request,
+    from_date: str = Query(..., description="YYYY-MM-DD"),
+    to_date: str = Query(..., description="YYYY-MM-DD"),
+):
+    """Suivi conducteur + éco-conduite — score natif Navixy plugin 46."""
+    h, tenant = await get_tenant_context(request)
+    return await compute_driver_ecodriving(navixy, cache, h, from_date, to_date, tenant)
 
 # ============ IOT FLOWS ============
 

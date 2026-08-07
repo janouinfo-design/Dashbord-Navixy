@@ -1,0 +1,32 @@
+{
+  "summary": "Full backend + frontend validation of the redesigned 'Conducteurs' tab (Navixy plugin 46 native scoring). Backend: 9/9 pytest tests pass on GET /api/drivers/ecodriving?from_date=2026-02-01&to_date=2026-02-07. Response shape verified — success/report_available/summary/drivers(6)/unassigned_vehicles(3)/sources/_audit. Summary: drivers_total=6, drivers_with_vehicle=2, drivers_with_activity=2, total_trips=95, total_distance_km=1427.8, penalties_per_100km=7.07 (invariant total_penalties/total_km*100 verified). The 4 drivers without a vehicle (POLICE 56974, Leart, Marcio, Nedir) have ALL data fields null (tracker_id, vehicle_label, score, distance_km, trips_count, driving_time_sec, penalties, events, daily, recent_events) — no fabricated zeros. Orhan (1067937): score.raw=46.5, score.display='★★★☆☆ (47)', 3 stars; distance=662.5 km; trips=45; 7 daily entries; 54 recent_events with ts/day/time/address/lat/lng/penalty/kind. per_100km invariant verified for braking/acceleration/turning/speeding (count/distance*100 = per_100km within 0.05). Ivan (1067938): score '★★☆☆☆ (23)'. unassigned_vehicles contains exactly LOGITRAK AUDI (781479), 5-Alliance 01 (3131157) and 5-VD 358-707 NEDIR truck (1067939) — the NEDIR truck is NOT attributed to employee 'Nedir' (nedir_emp.tracker_id=null). Audit lists all Navixy calls (employee/list, tracker/list, report/tracker/generate plugin 46, status/retrieve/delete, track/list). Second identical call returns cache hit (age~206s, <3s response). Sources footer mentions 'plugin 46'. Frontend on live URL: tab-drivers renders drivers-tab with all 6 KPIs (kpi-with-vehicle='2/6', kpi-avg-score='32.1', kpi-penalties-100km='6.63', kpi-distance='1253 km', kpi-trips='75', kpi-driving-time='40 h 42' for default 7d rolling). Filters: all=6 rows, without_vehicle=4 rows all with status-no-vehicle badges. Search 'Orhan' → 1 row. Drawer opens for Orhan: score '★★★☆☆ (41)' native, drawer-why-score + reason-braking/acceleration/turning/idling/speeding + penalty-summary + drawer-daily-chart + drawer-events all present. 60 event-map-link-* entries linking to https://www.google.com/maps?q=lat,lng. drawer-close removes drawer. Clicking a without-vehicle driver shows drawer-no-vehicle block. unassigned-vehicles section shows 3 cards, data-sources footer present. sort-name/score/distance/events all present. Regression: overview, analyse, vehicles, costs tabs load without errors.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_drivers_ecodriving.py",
+    "/app/test_reports/pytest/iter10_ecodriving.xml"
+  ],
+  "action_items": [
+    "MINOR / Recharts warning still emitted on mount ('width(-1) height(-1) should be greater than 0') — same finding as iteration 9, non-blocking. Set explicit minHeight on ResponsiveContainer parents or delay chart mount until layout is measured."
+  ],
+  "critical_code_review_comments": [
+    "ecodriving.py: for the 'idling' event kind the payload exposes 'min_per_100km' instead of 'per_100km' (other kinds use per_100km). Non-blocking (front-end handles both) but inconsistent — consider adding a 'per_100km' key alongside 'min_per_100km' for schema uniformity."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_drivers_ecodriving.py"
+  ],
+  "success_rate": {
+    "backend": "100% (9/9 ecodriving tests)",
+    "frontend": "100% (all requested behaviours verified)"
+  },
+  "seed_data_creation": "None — live Navixy data (period 2026-02-01..2026-02-07 for backend, default 7d rolling for frontend).",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "None. NAVIXY_HASH pre-configured in backend/.env.",
+  "context_for_next_testing_agent": "Iteration 10: Conducteurs redesign fully validated. Backend endpoint /api/drivers/ecodriving returns exactly the expected shape: (a) 6 drivers with correct null handling for 4 without vehicle; (b) Orhan & Ivan have native Navixy plugin-46 scores with '★' unicode + numeric value; (c) per_100km = count/distance*100 invariant holds for braking/acceleration/turning/speeding (idling uses 'min_per_100km' — different key by design); (d) 3 unassigned_vehicles (LOGITRAK AUDI 781479, 5-Alliance 01 3131157, 5-VD 358-707 NEDIR truck 1067939) are NOT attributed to any driver — employee 'Nedir' correctly stays vehicle-less; (e) cache hit on second call (<3s). Frontend Drivers tab shows all KPIs, filters, sorting, drawer with native score display, 60 map links to google.com/maps for Orhan, and dedicated drawer-no-vehicle block for driverless employees. Only carry-over is the Recharts responsive-container warning on mount.",
+  "rca_of_the_issue": "N/A — no defects reproduced."
+}

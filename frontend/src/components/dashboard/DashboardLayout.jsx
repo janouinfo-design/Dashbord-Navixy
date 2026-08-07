@@ -51,13 +51,12 @@ export const DashboardLayout = () => {
     setLoading(true);
     try {
       const params = { from_date: f, to_date: t };
-      const [statsRes, trendsRes, compRes, idleRes, effRes, driversRes] = await Promise.all([
+      const [statsRes, trendsRes, compRes, idleRes, effRes] = await Promise.all([
         api.get(`${API}/fleet/stats`, { params }),
         api.get(`${API}/analytics/trends`, { params }),
         api.get(`${API}/analytics/vehicle-comparison`, { params }),
         api.get(`${API}/fleet/idle-by-group`).catch(() => ({ data: { success: false } })),
         api.get(`${API}/fleet/efficiency`, { params }),
-        api.get(`${API}/reports/driver`, { params }).catch(() => ({ data: { success: false } })),
       ]);
       setData({
         stats: statsRes.data.success ? statsRes.data : null,
@@ -65,7 +64,6 @@ export const DashboardLayout = () => {
         comparison: compRes.data.success ? compRes.data : null,
         idleGroups: idleRes.data.success && idleRes.data.groups?.length > 0 ? idleRes.data : null,
         efficiency: effRes.data.success ? effRes.data : null,
-        drivers: driversRes.data.success ? driversRes.data : null,
       });
       setLastUpdate(new Date().toISOString());
     } catch (error) {
