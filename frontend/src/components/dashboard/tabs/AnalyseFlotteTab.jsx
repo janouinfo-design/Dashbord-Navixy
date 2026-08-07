@@ -31,9 +31,9 @@ const Tip = ({ label, def, children }) => {
   return (
     <span className="relative inline-flex items-center gap-0.5">
       {children}
-      <button onClick={(e) => { e.stopPropagation(); setS(!s); }} className="p-0.5 hover:bg-gray-100 rounded"><Info size={10} className={s ? 'text-[#111]' : 'text-gray-300'} /></button>
+      <span role="button" tabIndex={0} onClick={(e) => { e.stopPropagation(); setS(!s); }} onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.stopPropagation(); setS(!s); } }} className="p-0.5 hover:bg-gray-100 rounded cursor-pointer"><Info size={10} className={s ? 'text-[#111]' : 'text-gray-300'} /></span>
       {s && <span className="absolute top-full left-0 mt-1 z-50 bg-white rounded-lg border border-gray-200 shadow-lg p-2.5 w-52 text-left">
-        <span className="flex justify-between mb-0.5"><span className="text-[11px] font-semibold">{label}</span><button onClick={() => setS(false)}><X size={11} className="text-gray-400" /></button></span>
+        <span className="flex justify-between mb-0.5"><span className="text-[11px] font-semibold">{label}</span><span role="button" tabIndex={0} onClick={() => setS(false)} className="cursor-pointer"><X size={11} className="text-gray-400" /></span></span>
         <span className="text-[10px] text-gray-600 block">{def}</span>
       </span>}
     </span>
