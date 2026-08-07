@@ -1,0 +1,52 @@
+{
+  "summary": "Tested Vue generale refactor: 6 clickable KPI cards, insights, detail drawers, period selector, and KPI consistency across 4 backend endpoints (fleet/stats, vehicle-comparison, trends, efficiency). Backend 17/17 passing after fixing one refactor regression in /api/export/pdf. Frontend all interactions working; header now shows 12 vehicules - 4 actifs - 2889 km matching backend total.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/fleet/stats vs /api/analytics/{vehicle-comparison,trends} vs /api/fleet/efficiency", "issue": "On COLD cache first-run with same from_date/to_date, totals drifted by 1.0-2.3 km (2883.7 vs 2884.7 vs 2886.0) because each endpoint independently called Navixy get_mileage with slightly different timing. After cache warm-up, all four returned identical values and consistency tests pass. Consider having vehicle-comparison/trends/efficiency reuse the cached mileage buckets from fleet/stats to guarantee <0.5km consistency on first call."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "passed_tests": [
+    "Backend GET /api/fleet/stats?from_date=2026-08-01&to_date=2026-08-07 returns summary.total_mileage numeric",
+    "Backend GET /api/analytics/vehicle-comparison with from_date/to_date returns vehicles; sum of total_distance_week matches fleet/stats total_mileage (within 0.5km after cache)",
+    "Backend GET /api/analytics/trends with from_date/to_date - summary.total_distance matches fleet/stats total_mileage",
+    "Backend GET /api/fleet/efficiency with from_date/to_date - sum of vehicles.period_mileage matches fleet/stats total_mileage",
+    "Backend vehicle-comparison field renamed: active_days present, active_days_7d absent",
+    "Backend all 12 previous tests still green (root, trends null fields, fuel config CRUD, audit/compare, PDF export after fix, idle-by-group, driver report)",
+    "Frontend Overview renders all 6 KPI cards with correct data-testids: kpi-click-utilization/active/distance/engine/moving/offline",
+    "Frontend clicking Distance KPI opens data-testid=detail-drawer with total distance breakdown (contains 'km')",
+    "Frontend clicking Hors ligne KPI opens drawer listing 8 offline vehicles with duration indicators (< 1h, > 3 jours, etc.)",
+    "Frontend 4 clickable insight cards (data-testid=insight-*) - clicking opens drawer",
+    "Frontend drawer closes via drawer-close (X) button AND drawer-backdrop click",
+    "Frontend period selector 7 jours (data-testid=period-7d) triggers refresh, header shows 2026-08-01 au 2026-08-07",
+    "Frontend Performance and Vehicles tabs load without errors",
+    "Frontend header summary '12 vehicules - 4 actifs - 2889 km' consistent with backend"
+  ],
+  "test_report_links": [
+    "/app/backend/tests/backend_test.py",
+    "/app/test_reports/pytest/pytest_results.xml"
+  ],
+  "action_items": [
+    "Optional (nice-to-have): share cached mileage data across compute_vehicle_comparison / compute_trends / compute_fleet_efficiency to guarantee <0.5km consistency on FIRST call (currently only after warm cache)"
+  ],
+  "critical_code_review_comments": [
+    "server.py:612 was calling engine.compute_vehicle_comparison(h, tenant) with the old 2-arg signature after the refactor made it require (h, from_date, to_date, tenant). This broke /api/export/pdf with a 500 TypeError. Fixed in this iteration by passing from_date, to_date, tenant explicitly.",
+    "Each of the 4 endpoints (fleet/stats, vehicle-comparison, trends, efficiency) makes its own Navixy get_mileage call. On cold cache, minor drift (~1-2 km) occurs because ongoing trips advance between the near-simultaneous calls. Consider computing mileage once in a shared coroutine and passing the result down."
+  ],
+  "updated_files": [
+    "/app/backend/tests/backend_test.py",
+    "/app/backend/server.py"
+  ],
+  "success_rate": {"backend": "100% (17/17)", "frontend": "100%"},
+  "seed_data_creation": "None - live Navixy data. Fuel config cleaned by module fixture.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": false,
+  "test_credentials": "None. NAVIXY_HASH pre-configured. Admin mode via ?admin=true.",
+  "context_for_next_testing_agent": "17 backend tests including 5 new consistency tests (KPI parity across 4 endpoints for same date range). PDF export bug fixed in this iteration (server.py line 612 - compute_vehicle_comparison signature). Cold-cache mileage drift is a soft issue - documented but not blocking. Detail drawer, KPI cards, insights all wired with data-testids ready for future regression.",
+  "rca_of_the_issue": "PDF export 500: /api/export/pdf handler still used the pre-refactor call `engine.compute_vehicle_comparison(h, tenant)` while the engine method now requires `(h, from_date, to_date, tenant)`. Reproduced with pytest test_export_pdf -> 500. Fixed by supplying from_date/to_date. Backend logs confirmed: `TypeError: AnalyticsEngine.compute_vehicle_comparison() missing 2 required positional arguments: 'to_date' and 'tenant'`."
+}

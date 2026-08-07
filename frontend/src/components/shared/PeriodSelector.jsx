@@ -1,31 +1,40 @@
 import { useState } from "react";
 import { Calendar } from "lucide-react";
 
+const fmt = (d) => d.toISOString().split('T')[0];
+
 export const PeriodSelector = ({ period, setPeriod, fromDate, setFromDate, toDate, setToDate, onApply }) => {
   const [showCustom, setShowCustom] = useState(false);
 
   const handlePeriodChange = (newPeriod) => {
     setPeriod(newPeriod);
-    const today = new Date();
+    const now = new Date();
+    const todayStr = fmt(now);
     let from, to;
 
     switch (newPeriod) {
       case 'today':
-        from = to = today.toISOString().split('T')[0];
+        from = to = todayStr;
         break;
-      case 'week':
-        from = new Date(today.setDate(today.getDate() - 7)).toISOString().split('T')[0];
-        to = new Date().toISOString().split('T')[0];
+      case 'week': {
+        const d = new Date(now);
+        d.setDate(d.getDate() - 6); // 7 days inclusive
+        from = fmt(d);
+        to = todayStr;
         break;
-      case 'month':
-        from = new Date(today.getFullYear(), today.getMonth(), 1).toISOString().split('T')[0];
-        to = new Date().toISOString().split('T')[0];
+      }
+      case 'month': {
+        const d = new Date(now);
+        d.setDate(d.getDate() - 29); // 30 days inclusive
+        from = fmt(d);
+        to = todayStr;
         break;
+      }
       case 'custom':
         setShowCustom(true);
         return;
       default:
-        from = to = today.toISOString().split('T')[0];
+        from = to = todayStr;
     }
 
     setFromDate(from);
@@ -63,28 +72,13 @@ export const PeriodSelector = ({ period, setPeriod, fromDate, setFromDate, toDat
       {(showCustom || period === 'custom') && (
         <div className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-1.5">
           <Calendar size={14} className="text-gray-400" />
-          <input
-            type="date"
-            value={fromDate}
-            onChange={(e) => setFromDate(e.target.value)}
-            className="text-xs border-none focus:outline-none w-28"
-            data-testid="from-date"
-          />
+          <input type="date" value={fromDate} onChange={(e) => setFromDate(e.target.value)}
+            className="text-xs border-none focus:outline-none w-28" data-testid="from-date" />
           <span className="text-gray-300">-</span>
-          <input
-            type="date"
-            value={toDate}
-            onChange={(e) => setToDate(e.target.value)}
-            className="text-xs border-none focus:outline-none w-28"
-            data-testid="to-date"
-          />
-          <button
-            onClick={() => { setShowCustom(false); if (onApply) onApply(fromDate, toDate); }}
-            className="bg-[#111] text-white rounded px-2 py-0.5 text-xs hover:bg-gray-800"
-            data-testid="apply-custom"
-          >
-            OK
-          </button>
+          <input type="date" value={toDate} onChange={(e) => setToDate(e.target.value)}
+            className="text-xs border-none focus:outline-none w-28" data-testid="to-date" />
+          <button onClick={() => { setShowCustom(false); if (onApply) onApply(fromDate, toDate); }}
+            className="bg-[#111] text-white rounded px-2 py-0.5 text-xs hover:bg-gray-800" data-testid="apply-custom">OK</button>
         </div>
       )}
     </div>

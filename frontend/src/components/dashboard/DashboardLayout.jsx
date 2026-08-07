@@ -16,6 +16,9 @@ import { CostsTab } from "@/components/dashboard/tabs/CostsTab";
 import { IoTTab } from "@/components/dashboard/tabs/IoTTab";
 import { AuditTab } from "@/components/dashboard/tabs/AuditTab";
 
+const fmt = (d) => d.toISOString().split('T')[0];
+const initFrom = () => { const d = new Date(); d.setDate(d.getDate() - 6); return fmt(d); };
+
 const TABS = [
   { id: "overview", label: "Vue generale", icon: BarChart3 },
   { id: "performance", label: "Performance", icon: Gauge },
@@ -25,39 +28,39 @@ const TABS = [
   { id: "costs", label: "Couts", icon: DollarSign },
   { id: "iot", label: "IoT", icon: Cpu },
 ];
-
 const ADMIN_TAB = { id: "audit", label: "Audit", icon: ShieldCheck };
 
 export const DashboardLayout = () => {
   const [activeTab, setActiveTab] = useState("overview");
-  const [data, setData] = useState({ stats: null, trends: null, comparison: null, idleGroups: null });
+  const [data, setData] = useState({});
   const [loading, setLoading] = useState(true);
   const [lastUpdate, setLastUpdate] = useState(null);
   const [period, setPeriod] = useState("week");
-  const [fromDate, setFromDate] = useState(new Date(Date.now() - 7 * 86400000).toISOString().split("T")[0]);
-  const [toDate, setToDate] = useState(new Date().toISOString().split("T")[0]);
+  const [fromDate, setFromDate] = useState(initFrom);
+  const [toDate, setToDate] = useState(() => fmt(new Date()));
   const [debugMode, setDebugMode] = useState(false);
   const [isAdmin, setIsAdmin] = useState(false);
 
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    if (params.get('admin') === 'true') setIsAdmin(true);
+    if (new URLSearchParams(window.location.search).get('admin') === 'true') setIsAdmin(true);
   }, []);
 
   const visibleTabs = isAdmin ? [...TABS, ADMIN_TAB] : TABS;
 
   const fetchAll = useCallback(async (from, to) => {
+    const f = from || fromDate;
+    const t = to || toDate;
     setLoading(true);
     try {
+      const params = { from_date: f, to_date: t };
       const [statsRes, trendsRes, compRes, idleRes, effRes, driversRes] = await Promise.all([
-        api.get(`${API}/fleet/stats`, { params: { from_date: from || fromDate, to_date: to || toDate } }),
-        api.get(`${API}/analytics/trends`, { params: { period: "week" } }),
-        api.get(`${API}/analytics/vehicle-comparison`),
+        api.get(`${API}/fleet/stats`, { params }),
+        api.get(`${API}/analytics/trends`, { params }),
+        api.get(`${API}/analytics/vehicle-comparison`, { params }),
         api.get(`${API}/fleet/idle-by-group`).catch(() => ({ data: { success: false } })),
-        api.get(`${API}/fleet/efficiency`, { params: { date: from || fromDate, period: period === "today" ? "day" : period } }),
-        api.get(`${API}/reports/driver`, { params: { from_date: from || fromDate, to_date: to || toDate } }).catch(() => ({ data: { success: false } })),
+        api.get(`${API}/fleet/efficiency`, { params }),
+        api.get(`${API}/reports/driver`, { params }).catch(() => ({ data: { success: false } })),
       ]);
-
       setData({
         stats: statsRes.data.success ? statsRes.data : null,
         trends: trendsRes.data.success ? trendsRes.data : null,
@@ -71,7 +74,7 @@ export const DashboardLayout = () => {
       console.error("Data fetch error:", error);
     }
     setLoading(false);
-  }, [fromDate, toDate, period]);
+  }, [fromDate, toDate]);
 
   useEffect(() => { fetchAll(); }, []);
 
@@ -94,51 +97,34 @@ export const DashboardLayout = () => {
     }
   };
 
+  const handleTabNavigate = (tabId) => setActiveTab(tabId);
+
   const vehicles = data.stats?.vehicles || [];
   const activeVehicles = vehicles.filter(v => v.connection_status === "active").length;
   const totalKm = (data.stats?.summary?.total_mileage || 0).toFixed(0);
 
   return (
     <div data-testid="dashboard-layout">
-      {/* Header */}
-      <Header
-        title="Dashboard"
+      <Header title="Dashboard"
         subtitle={`${vehicles.length} vehicules — ${activeVehicles} actifs — ${totalKm} km`}
-        onRefresh={() => fetchAll()}
-        lastUpdate={lastUpdate}
-        alertCount={0}
-        debugMode={debugMode}
-        onDebugToggle={() => setDebugMode(d => !d)}
-        onExportPDF={handleExportPDF}
-      >
-        <PeriodSelector
-          period={period} setPeriod={setPeriod}
-          fromDate={fromDate} setFromDate={setFromDate}
-          toDate={toDate} setToDate={setToDate}
-          onApply={handlePeriodApply}
-        />
+        onRefresh={() => fetchAll()} lastUpdate={lastUpdate} alertCount={0}
+        debugMode={debugMode} onDebugToggle={() => setDebugMode(d => !d)} onExportPDF={handleExportPDF}>
+        <PeriodSelector period={period} setPeriod={setPeriod}
+          fromDate={fromDate} setFromDate={setFromDate} toDate={toDate} setToDate={setToDate}
+          onApply={handlePeriodApply} />
       </Header>
 
-      {/* Horizontal Tabs */}
       <div className="sticky top-16 z-20 bg-white border-b border-gray-200" data-testid="dashboard-tabs">
         <div className="max-w-[1600px] mx-auto px-4 lg:px-8">
           <div className="flex items-center gap-0 overflow-x-auto scrollbar-hide -mb-px">
             {visibleTabs.map((tab) => {
               const isActive = activeTab === tab.id;
               return (
-                <button
-                  key={tab.id}
-                  data-testid={`tab-${tab.id}`}
-                  onClick={() => setActiveTab(tab.id)}
-                  className={`
-                    flex items-center gap-2 px-5 py-3.5 text-[13px] font-medium whitespace-nowrap
-                    border-b-2 transition-all duration-200
+                <button key={tab.id} data-testid={`tab-${tab.id}`} onClick={() => setActiveTab(tab.id)}
+                  className={`flex items-center gap-2 px-5 py-3.5 text-[13px] font-medium whitespace-nowrap border-b-2 transition-all duration-200
                     ${isActive
                       ? tab.id === 'audit' ? "border-red-500 text-red-600" : "border-[#111] text-[#111]"
-                      : "border-transparent text-gray-400 hover:text-gray-600 hover:border-gray-300"
-                    }
-                  `}
-                >
+                      : "border-transparent text-gray-400 hover:text-gray-600 hover:border-gray-300"}`}>
                   <tab.icon size={15} className={isActive ? (tab.id === 'audit' ? "text-red-500" : "text-[#111]") : "text-gray-400"} />
                   {tab.label}
                 </button>
@@ -148,7 +134,6 @@ export const DashboardLayout = () => {
         </div>
       </div>
 
-      {/* Tab Content */}
       <div className="transition-opacity duration-200">
         {loading ? (
           <div className="flex items-center justify-center h-[calc(100vh-140px)]" data-testid="loading">
@@ -159,7 +144,7 @@ export const DashboardLayout = () => {
           </div>
         ) : (
           <>
-            {activeTab === "overview" && <OverviewTab data={data} debugMode={debugMode} />}
+            {activeTab === "overview" && <OverviewTab data={data} debugMode={debugMode} fromDate={fromDate} toDate={toDate} onNavigate={handleTabNavigate} />}
             {activeTab === "performance" && <PerformanceTab data={data} debugMode={debugMode} />}
             {activeTab === "efficiency" && <EfficiencyTab data={data} debugMode={debugMode} />}
             {activeTab === "drivers" && <DriversTab data={data} fromDate={fromDate} toDate={toDate} debugMode={debugMode} />}

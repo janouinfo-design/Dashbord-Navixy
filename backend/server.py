@@ -290,11 +290,11 @@ async def get_fleet_stats(
 @api_router.get("/fleet/efficiency")
 async def get_fleet_efficiency(
     request: Request,
-    date: str = Query(..., description="YYYY-MM-DD"),
-    period: str = Query("day"),
+    from_date: str = Query(..., description="YYYY-MM-DD"),
+    to_date: str = Query(..., description="YYYY-MM-DD"),
 ):
     h, tenant = await get_tenant_context(request)
-    return await engine.compute_fleet_efficiency(h, date, period, tenant)
+    return await engine.compute_fleet_efficiency(h, from_date, to_date, tenant)
 
 @api_router.get("/fleet/idle-by-group")
 async def get_idle_by_group(request: Request):
@@ -304,16 +304,21 @@ async def get_idle_by_group(request: Request):
 @api_router.get("/analytics/trends")
 async def get_fleet_trends(
     request: Request,
-    period: str = Query("week"),
+    from_date: str = Query(..., description="YYYY-MM-DD"),
+    to_date: str = Query(..., description="YYYY-MM-DD"),
     tracker_id: Optional[int] = Query(None),
 ):
     h, tenant = await get_tenant_context(request)
-    return await engine.compute_trends(h, period, tracker_id, tenant)
+    return await engine.compute_trends(h, from_date, to_date, tracker_id, tenant)
 
 @api_router.get("/analytics/vehicle-comparison")
-async def get_vehicle_comparison(request: Request):
+async def get_vehicle_comparison(
+    request: Request,
+    from_date: str = Query(..., description="YYYY-MM-DD"),
+    to_date: str = Query(..., description="YYYY-MM-DD"),
+):
     h, tenant = await get_tenant_context(request)
-    return await engine.compute_vehicle_comparison(h, tenant)
+    return await engine.compute_vehicle_comparison(h, from_date, to_date, tenant)
 
 @api_router.get("/reports/driver")
 async def get_driver_report(
@@ -604,7 +609,7 @@ async def export_pdf(
     """Generate a branded PDF report of fleet stats."""
     h, tenant = await get_tenant_context(request)
     stats = await engine.compute_fleet_stats(h, from_date, to_date, None, tenant)
-    comp = await engine.compute_vehicle_comparison(h, tenant)
+    comp = await engine.compute_vehicle_comparison(h, from_date, to_date, tenant)
 
     client_info = await get_client_from_subdomain(request)
     client_name = client_info.get('name', 'LOGITRAK') if client_info else 'LOGITRAK'

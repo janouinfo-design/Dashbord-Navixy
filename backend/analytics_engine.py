@@ -226,9 +226,9 @@ class AnalyticsEngine:
     # ──────────────────────────────────────────────────
 
     async def compute_fleet_efficiency(
-        self, navixy_hash: str, date: str, period: str, tenant: str,
+        self, navixy_hash: str, from_date: str, to_date: str, tenant: str,
     ) -> dict:
-        cache_key = f"fleet_eff:{date}:{period}"
+        cache_key = f"fleet_eff:{from_date}:{to_date}"
         cached, hit, age = self.cache.get(tenant, cache_key)
         if cached:
             cached["_audit"]["cache"] = {"hit": True, "age_seconds": age}
@@ -246,14 +246,12 @@ class AnalyticsEngine:
         tid_list = [t['id'] for t in tracker_list]
         audit.real("tracker_list", "tracker/list")
 
-        # Parallel: states + mileage for the period
-        days_count = 7 if period == "week" else (30 if period == "month" else 1)
-        end_date = datetime.strptime(date, '%Y-%m-%d')
-        start_date = end_date - timedelta(days=days_count - 1)
-        from_str = start_date.strftime('%Y-%m-%d')
+        d_from = datetime.strptime(from_date, '%Y-%m-%d')
+        d_to = datetime.strptime(to_date, '%Y-%m-%d')
+        days_count = max((d_to - d_from).days + 1, 1)
 
         states_t = self.navixy.get_tracker_states_batch(tid_list, navixy_hash)
-        mileage_t = self.navixy.get_mileage(tid_list, f"{from_str} 00:00:00", f"{date} 23:59:59", navixy_hash)
+        mileage_t = self.navixy.get_mileage(tid_list, f"{from_date} 00:00:00", f"{to_date} 23:59:59", navixy_hash)
         states_map, mileage_raw = await asyncio.gather(states_t, mileage_t)
 
         audit.real("vehicle_states", "tracker/get_state (batch, instantané)")
@@ -307,8 +305,7 @@ class AnalyticsEngine:
 
         result = {
             "success": True,
-            "date": date,
-            "period": period,
+            "period": {"from": from_date, "to": to_date, "days": days_count},
             "summary": {
                 "average_utilization_pct": avg_util,
                 "total_vehicles": len(vehicles),
@@ -327,9 +324,9 @@ class AnalyticsEngine:
     # ──────────────────────────────────────────────────
 
     async def compute_trends(
-        self, navixy_hash: str, period: str, tracker_id: Optional[int], tenant: str,
+        self, navixy_hash: str, from_date: str, to_date: str, tracker_id: Optional[int], tenant: str,
     ) -> dict:
-        cache_key = f"trends:{period}:{tracker_id}"
+        cache_key = f"trends:{from_date}:{to_date}:{tracker_id}"
         cached, hit, age = self.cache.get(tenant, cache_key)
         if cached:
             cached["_audit"]["cache"] = {"hit": True, "age_seconds": age}
@@ -338,11 +335,9 @@ class AnalyticsEngine:
         audit = AuditBuilder(tenant)
         self.navixy.reset_logs()
 
-        today = datetime.now(timezone.utc)
-        days = 7 if period == "week" else 30
-        start = today - timedelta(days=days - 1)
-        from_str = start.strftime('%Y-%m-%d')
-        to_str = today.strftime('%Y-%m-%d')
+        d_from = datetime.strptime(from_date, '%Y-%m-%d')
+        d_to = datetime.strptime(to_date, '%Y-%m-%d')
+        days = max((d_to - d_from).days + 1, 1)
 
         tk_data = await self.navixy.get_trackers(navixy_hash)
         if not tk_data.get('success'):
@@ -355,7 +350,7 @@ class AnalyticsEngine:
         tid_list = [t['id'] for t in tracker_list]
         audit.real("tracker_list", "tracker/list")
 
-        mileage_raw = await self.navixy.get_mileage(tid_list, f"{from_str} 00:00:00", f"{to_str} 23:59:59", navixy_hash)
+        mileage_raw = await self.navixy.get_mileage(tid_list, f"{from_date} 00:00:00", f"{to_date} 23:59:59", navixy_hash)
         audit.real("daily_mileage", "tracker/stats/mileage/read")
         audit.unavailable("avg_efficiency", "Pas de données historiques d'efficacité via cette API")
         audit.unavailable("driving_time", "Pas de données historiques via l'API snapshot")
@@ -365,7 +360,7 @@ class AnalyticsEngine:
         # Init daily buckets
         daily: Dict[str, dict] = {}
         for i in range(days):
-            d = start + timedelta(days=i)
+            d = d_from + timedelta(days=i)
             ds = d.strftime('%Y-%m-%d')
             daily[ds] = {"total_distance": 0.0, "active_vehicles": 0}
 
@@ -413,10 +408,9 @@ class AnalyticsEngine:
 
         result = {
             "success": True,
-            "period": period,
+            "period": {"from": from_date, "to": to_date},
             "days": days,
             "summary": {
-                "period": period,
                 "total_distance": total_dist,
                 "avg_efficiency": None,
                 "total_fuel": total_fuel,
@@ -434,8 +428,8 @@ class AnalyticsEngine:
     # 4. VEHICLE COMPARISON  (replaces /analytics/vehicle-comparison — NO RANDOM)
     # ──────────────────────────────────────────────────
 
-    async def compute_vehicle_comparison(self, navixy_hash: str, tenant: str) -> dict:
-        cache_key = "vehicle_comp"
+    async def compute_vehicle_comparison(self, navixy_hash: str, from_date: str, to_date: str, tenant: str) -> dict:
+        cache_key = f"vehicle_comp:{from_date}:{to_date}"
         cached, hit, age = self.cache.get(tenant, cache_key)
         if cached:
             cached["_audit"]["cache"] = {"hit": True, "age_seconds": age}
@@ -453,19 +447,17 @@ class AnalyticsEngine:
         tid_list = [t['id'] for t in tracker_list]
         audit.real("tracker_list", "tracker/list")
 
-        # 7-day mileage + current states
-        today = datetime.now(timezone.utc)
-        week_ago = today - timedelta(days=6)
-        from_str = week_ago.strftime('%Y-%m-%d')
-        to_str = today.strftime('%Y-%m-%d')
+        d_from = datetime.strptime(from_date, '%Y-%m-%d')
+        d_to = datetime.strptime(to_date, '%Y-%m-%d')
+        days_count = max((d_to - d_from).days + 1, 1)
 
         states_t = self.navixy.get_tracker_states_batch(tid_list, navixy_hash)
-        mileage_t = self.navixy.get_mileage(tid_list, f"{from_str} 00:00:00", f"{to_str} 23:59:59", navixy_hash)
+        mileage_t = self.navixy.get_mileage(tid_list, f"{from_date} 00:00:00", f"{to_date} 23:59:59", navixy_hash)
         states_map, mileage_raw = await asyncio.gather(states_t, mileage_t)
 
         audit.real("vehicle_states", "tracker/get_state (batch)")
-        audit.real("weekly_mileage", "tracker/stats/mileage/read (7j)")
-        audit.computed("utilization_score", "(jours_actifs / 7) × 100")
+        audit.real("period_mileage", f"tracker/stats/mileage/read ({days_count}j)")
+        audit.computed("utilization_score", f"(jours_actifs / {days_count}) × 100")
         audit.unavailable("fuel_efficiency", "Pas de capteur carburant via cette API")
         audit.unavailable("idle_percentage", "Données historiques non disponibles via snapshot")
         audit.unavailable("violations_count", "Pas de données d'infractions via cette API")
@@ -495,7 +487,7 @@ class AnalyticsEngine:
             is_active = state.get('connection_status') == 'active'
             dist = weekly_km.get(ts, 0)
             act_days = weekly_active_days.get(ts, 0)
-            score = round((act_days / 7) * 100)
+            score = round((act_days / days_count) * 100)
 
             comparison.append({
                 "tracker_id": tid,
@@ -504,7 +496,8 @@ class AnalyticsEngine:
                 "is_active": is_active,
                 "connection_status": state.get('connection_status', 'unknown'),
                 "utilization_score": score,
-                "active_days_7d": act_days,
+                "active_days": act_days,
+                "total_days": days_count,
                 "total_distance_week": dist,
                 "current_speed": gps.get('speed', 0),
                 "fuel_efficiency": None,

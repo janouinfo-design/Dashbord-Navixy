@@ -34,7 +34,7 @@ export const VehiclesTab = ({ data }) => {
     ...v,
     utilization_score: compMap[v.tracker_id]?.utilization_score || 0,
     total_distance_week: compMap[v.tracker_id]?.total_distance_week || 0,
-    active_days_7d: compMap[v.tracker_id]?.active_days_7d || 0,
+    active_days: compMap[v.tracker_id]?.active_days || 0,
   }));
 
   const totalV = vehicles.length;

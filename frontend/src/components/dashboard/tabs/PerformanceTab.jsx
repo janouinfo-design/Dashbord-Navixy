@@ -76,7 +76,7 @@ export const PerformanceTab = ({ data }) => {
               <div className="flex-1 min-w-0">
                 <div className="text-sm font-medium text-gray-800 truncate">{v.label}</div>
                 <div className="text-[10px] text-gray-400">
-                  {v.total_distance_week} km | Util. {v.utilization_score}% | {v.active_days_7d || 0}j actifs
+                  {v.total_distance_week} km | Util. {v.utilization_score}% | {v.active_days || 0}j actifs
                 </div>
               </div>
               <span className={`text-sm font-bold ${(v.utilization_score || 0) >= 70 ? 'text-emerald-600' : (v.utilization_score || 0) >= 30 ? 'text-amber-600' : 'text-red-500'}`}>

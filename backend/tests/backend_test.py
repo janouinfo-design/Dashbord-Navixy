@@ -65,7 +65,8 @@ def test_fleet_stats_audit_and_real_data(api):
 
 # ---------- Trends ----------
 def test_trends_real_and_null_fields(api):
-    r = api.get(f"{BASE_URL}/api/analytics/trends", params={"period": "week"}, timeout=TIMEOUT)
+    r = api.get(f"{BASE_URL}/api/analytics/trends",
+                params={"from_date": "2026-07-15", "to_date": "2026-07-22"}, timeout=TIMEOUT)
     assert r.status_code == 200, r.text
     data = r.json()
     assert "_audit" in data
@@ -83,7 +84,8 @@ def test_trends_real_and_null_fields(api):
 
 # ---------- Vehicle comparison ----------
 def test_vehicle_comparison(api):
-    r = api.get(f"{BASE_URL}/api/analytics/vehicle-comparison", timeout=TIMEOUT)
+    r = api.get(f"{BASE_URL}/api/analytics/vehicle-comparison",
+                params={"from_date": "2026-07-15", "to_date": "2026-07-22"}, timeout=TIMEOUT)
     assert r.status_code == 200, r.text
     data = r.json()
     assert "_audit" in data
@@ -99,7 +101,7 @@ def test_vehicle_comparison(api):
 # ---------- Fleet efficiency ----------
 def test_fleet_efficiency(api):
     r = api.get(f"{BASE_URL}/api/fleet/efficiency",
-                params={"date": "2026-07-22", "period": "week"}, timeout=TIMEOUT)
+                params={"from_date": "2026-07-15", "to_date": "2026-07-22"}, timeout=TIMEOUT)
     assert r.status_code == 200, r.text
     data = r.json()
     assert "_audit" in data
@@ -216,3 +218,64 @@ def test_driver_report(api):
     assert "_audit" in data
     drivers = data.get("drivers", [])
     assert isinstance(drivers, list)
+
+# ---------- KPI CONSISTENCY across 4 endpoints (Vue generale refactor) ----------
+FROM_D = "2026-08-01"
+TO_D = "2026-08-07"
+
+
+@pytest.fixture(scope="module")
+def consistency_data(api):
+    stats = api.get(f"{BASE_URL}/api/fleet/stats",
+                    params={"from_date": FROM_D, "to_date": TO_D}, timeout=TIMEOUT).json()
+    comp = api.get(f"{BASE_URL}/api/analytics/vehicle-comparison",
+                   params={"from_date": FROM_D, "to_date": TO_D}, timeout=TIMEOUT).json()
+    trends = api.get(f"{BASE_URL}/api/analytics/trends",
+                     params={"from_date": FROM_D, "to_date": TO_D}, timeout=TIMEOUT).json()
+    eff = api.get(f"{BASE_URL}/api/fleet/efficiency",
+                  params={"from_date": FROM_D, "to_date": TO_D}, timeout=TIMEOUT).json()
+    return {"stats": stats, "comp": comp, "trends": trends, "eff": eff}
+
+
+def test_fleet_stats_has_total_mileage(consistency_data):
+    stats = consistency_data["stats"]
+    summary = stats.get("summary", {})
+    assert "total_mileage" in summary
+    assert isinstance(summary["total_mileage"], (int, float))
+
+
+def test_vehicle_comparison_sum_matches_fleet_stats(consistency_data):
+    stats_total = consistency_data["stats"].get("summary", {}).get("total_mileage", 0)
+    vehicles = consistency_data["comp"].get("vehicles", [])
+    comp_sum = round(sum(v.get("total_distance_week", 0) or 0 for v in vehicles), 1)
+    assert abs(comp_sum - stats_total) < 0.5, \
+        f"vehicle-comparison sum {comp_sum} != fleet/stats total_mileage {stats_total}"
+
+
+def test_trends_summary_matches_fleet_stats(consistency_data):
+    stats_total = consistency_data["stats"].get("summary", {}).get("total_mileage", 0)
+    trends = consistency_data["trends"]
+    trend_total = trends.get("summary", {}).get("total_distance")
+    if trend_total is None:
+        # Fallback: sum daily entries
+        daily = trends.get("daily") or trends.get("trends") or []
+        trend_total = round(sum((d.get("total_distance") or d.get("distance") or 0) for d in daily), 1)
+    assert abs(trend_total - stats_total) < 0.5, \
+        f"trends total {trend_total} != fleet/stats total_mileage {stats_total}"
+
+
+def test_efficiency_sum_matches_fleet_stats(consistency_data):
+    stats_total = consistency_data["stats"].get("summary", {}).get("total_mileage", 0)
+    vehicles = consistency_data["eff"].get("vehicles", [])
+    eff_sum = round(sum(v.get("period_mileage", 0) or 0 for v in vehicles), 1)
+    assert abs(eff_sum - stats_total) < 0.5, \
+        f"efficiency period_mileage sum {eff_sum} != fleet/stats total_mileage {stats_total}"
+
+
+def test_vehicle_comparison_has_active_days_not_7d(consistency_data):
+    """active_days_7d has been renamed to active_days."""
+    vehicles = consistency_data["comp"].get("vehicles", [])
+    assert len(vehicles) > 0
+    v = vehicles[0]
+    assert "active_days" in v, f"active_days missing from vehicle-comparison; keys: {list(v.keys())}"
+    assert "active_days_7d" not in v, "old key active_days_7d should be renamed"
