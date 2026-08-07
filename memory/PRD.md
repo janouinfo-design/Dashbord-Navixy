@@ -38,6 +38,23 @@ Vue generale | Analyse flotte | Conducteurs | Vehicules | Couts | IoT | (Audit v
 - Definitions avec tooltips (Tip component: span role=button, pas button imbrique)
 - Footer: seuils documentes + source Navixy
 
+## Conducteurs / Eco-conduite — FINALISE (2026 iter 10)
+- Score eco = notation NATIVE Navixy plugin 46 "Qualite de conduite" (0-100 + etoiles), affichee telle quelle
+- AUCUNE categorisation/conversion LOGITRAK (pas de seuils 80/60/40) — couleur derivee des etoiles Navixy
+- Backend: /api/drivers/ecodriving (ecodriving.py) — generate/status/retrieve/delete rapport plugin 46 + track/list
+- Attribution STRICTE: donnees conducteur uniquement via employee.tracker_id Navixy
+- Vehicules avec activite SANS conducteur assigne (AUDI, 5-Alliance, camion NEDIR): evenements NON attribues, section dediee
+- Statuts distincts: "Aucun vehicule assigne" / "Aucune donnee sur la periode" / "Donnees disponibles"
+- KPI: Avec vehicule X/Y, Score eco moyen, Penalites /100km, Distance attribuee, Trajets, Temps de conduite
+- Table triable (nom/score/distance/penalites100km) + filtres Tous|Avec vehicule|Sans vehicule|Avec activite + recherche
+- Drawer: score natif + "Pourquoi ce score ?" (freinages/accel/virages/ralenti/exces vitesse en /100km + brut),
+  penalites par jour (stacked chart couleurs Navixy), evenements recents geolocalises avec lien Google Maps
+- Radar artificiel SUPPRIME; footer "Source de verite" (donnee → endpoint → methode → attribution)
+- Periode = selecteur global du dashboard (from/to identiques partout)
+- Indicateurs /100km = count ÷ km × 100 (idling en min/100km)
+- Cache tenant 300s (1ere generation 5-45s)
+- Tests: iteration_10.json — 100% backend (9/9) + 100% frontend
+
 ## Regles
 - `ACTIVE_DAY_THRESHOLD_KM = 1.0`
 - Categories: sans_activite(0%) | sous-utilise(<30%) | modere(30-59%) | bonne(60-84%) | forte(>=85%)
@@ -58,6 +75,7 @@ Vue generale | Analyse flotte | Conducteurs | Vehicules | Couts | IoT | (Audit v
   - Tri par nom en asc par defaut
   - Tests: 100% backend (invariants 1/7/31 jours) + 100% frontend (iteration_9)
   - Regression: tous onglets fonctionnels, pas de tabs fantomes
+- [x] **Refonte Conducteurs / Eco-conduite** (iter 10): score natif Navixy plugin 46, attribution stricte, drawer explicatif, 100% teste
 
 ## Backlog
 - [ ] Integration Baubit (P2)
