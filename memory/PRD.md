@@ -11,6 +11,20 @@ Vue generale | Analyse flotte | Conducteurs | Vehicules | Couts | IoT | (Audit v
 - 6 KPI operationnels cliquables (Utilisation, Actifs, Distance, Moteur, Mouvement, Hors ligne)
 - Drawers contextuels riches (duree humaine, gravite, barres contribution)
 - Insights operationnels (cartes entieres cliquables, pas de lien separe)
+- **REMPLACEE par la refonte v2 ci-dessous (iter 11)**
+
+## Vue Generale — REFONTE v2 (iter 11, maquette modulaire sans heatmap)
+- Rangee 1 (6 KPI): resume flotte (active/sans activite % + sparkline + alerte hors ligne),
+  4 cartes categories avec donut SVG (clic → Analyse flotte), Km moy/utilise + mini barres
+- Rangee 2: Repartition (barre empilee + legende), Statut & impact financier (donut + carburant L/CHF
+  si taux configure sinon "indisponible + lien Couts"), Activite quotidienne (barres empilees par
+  categorie + ligne total km/jour, jours FR)
+- Rangee 3: Anomalies & alertes (regles deterministes cliquables), Conducteurs & score eco
+  (top 5 notations natives Navixy plugin 46, fetch lazy), Actions recommandees + Vehicule snapshot (top 5 km)
+- Header: "X en ligne" (connexion instantanee) ≠ "Flotte active" (utilisation periode)
+- AUCUNE metrique inventee (pas de TCO/satisfaction/usure) — couts uniquement via config carburant CHF
+- Anciens drawers Vue generale remplaces par navigation croisee vers les onglets detailles
+- Tests: iteration_11.json — 100% frontend + regression tous onglets
 
 ## Analyse Flotte (Fusion Performance + Efficacite) — FINALISE
 - **Performance SUPPRIME** (100% doublons)

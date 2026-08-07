@@ -102,7 +102,7 @@ export const DashboardLayout = () => {
   return (
     <div data-testid="dashboard-layout">
       <Header title="Dashboard"
-        subtitle={`${vehicles.length} vehicules — ${activeVehicles} actifs — ${totalKm} km`}
+        subtitle={`${vehicles.length} vehicules — ${activeVehicles} en ligne — ${totalKm} km`}
         onRefresh={() => fetchAll()} lastUpdate={lastUpdate} alertCount={0}
         debugMode={debugMode} onDebugToggle={() => setDebugMode(d => !d)} onExportPDF={handleExportPDF}>
         <PeriodSelector period={period} setPeriod={setPeriod}
