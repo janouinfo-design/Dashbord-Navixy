@@ -48,6 +48,39 @@ const Panel = ({ title, children, action, testId, className = "" }) => (
 const initials = (name) => name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
 const starColorCls = (stars) => stars >= 4 ? "text-emerald-600" : stars === 3 ? "text-amber-600" : "text-red-500";
 
+const fmtDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+
+// Previous period of identical length, immediately before fromDate
+const prevRange = (fromDate, toDate) => {
+  const d1 = new Date(fromDate + "T00:00:00");
+  const d2 = new Date(toDate + "T00:00:00");
+  const days = Math.round((d2 - d1) / 86400000) + 1;
+  const pTo = new Date(d1); pTo.setDate(pTo.getDate() - 1);
+  const pFrom = new Date(d1); pFrom.setDate(pFrom.getDate() - days);
+  return { from: fmtDate(pFrom), to: fmtDate(pTo) };
+};
+
+// Real delta vs previous period. goodWhenUp: true|false|undefined (neutral)
+const Delta = ({ curr, prev, unit = "", goodWhenUp, prevPeriod, testId }) => {
+  if (prev === null || prev === undefined) return null;
+  const diff = Math.round((curr - prev) * 10) / 10;
+  let cls = "text-gray-400 bg-gray-50 border-gray-200";
+  if (diff !== 0 && goodWhenUp !== undefined) {
+    const good = goodWhenUp ? diff > 0 : diff < 0;
+    cls = good ? "text-emerald-600 bg-emerald-50 border-emerald-100" : "text-red-500 bg-red-50 border-red-100";
+  } else if (diff !== 0) {
+    cls = "text-gray-600 bg-gray-50 border-gray-200";
+  }
+  const arrow = diff > 0 ? "▲" : diff < 0 ? "▼" : "=";
+  return (
+    <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md border text-[9px] font-semibold ${cls}`}
+      title={`Période précédente (${prevPeriod.from} au ${prevPeriod.to}) : ${prev}${unit}`}
+      data-testid={testId}>
+      {arrow} {diff > 0 ? "+" : ""}{diff}{unit}
+    </span>
+  );
+};
+
 export const OverviewTab = ({ data, fromDate, toDate, onNavigate }) => {
   const { stats, trends, efficiency } = data;
   const vehicles = stats?.vehicles || [];
@@ -65,6 +98,29 @@ export const OverviewTab = ({ data, fromDate, toDate, onNavigate }) => {
       .catch(() => { if (!cancelled) setEco({ loading: false, data: null, error: "indisponible" }); });
     return () => { cancelled = true; };
   }, [fromDate, toDate]);
+
+  // ---- Previous period (real Navixy data via /fleet/efficiency) ----
+  const prevPeriod = useMemo(() => prevRange(fromDate, toDate), [fromDate, toDate]);
+  const [prevEff, setPrevEff] = useState(null);
+  useEffect(() => {
+    let cancelled = false;
+    setPrevEff(null);
+    api.get(`${API}/fleet/efficiency`, { params: { from_date: prevPeriod.from, to_date: prevPeriod.to } })
+      .then(res => { if (!cancelled) setPrevEff(res.data.success ? res.data : null); })
+      .catch(() => { if (!cancelled) setPrevEff(null); });
+    return () => { cancelled = true; };
+  }, [prevPeriod]);
+
+  const pm = useMemo(() => {
+    if (!prevEff) return null;
+    const pv = prevEff.vehicles || [];
+    const used = pv.filter(v => v.active_days > 0).length;
+    const catCounts = {};
+    CATEGORIES.forEach(c => { catCounts[c.id] = pv.filter(v => v.category === c.id).length; });
+    const totalKm = prevEff.summary?.total_mileage || 0;
+    const kmPerUsed = used > 0 ? Math.round(totalKm / used) : 0;
+    return { used, catCounts, totalKm: Math.round(totalKm), kmPerUsed };
+  }, [prevEff]);
 
   // ---- Core computations (all from real endpoints) ----
   const m = useMemo(() => {
@@ -177,6 +233,7 @@ export const OverviewTab = ({ data, fromDate, toDate, onNavigate }) => {
               <span className="w-2 h-2 rounded-full bg-emerald-500" />
               <span className="text-gray-600">Flotte active ({usedPct}%) :</span>
               <span className="font-semibold" style={{ fontFamily: "Outfit, sans-serif" }}>{m.used.length}/{m.total}</span>
+              {pm && <Delta curr={m.used.length} prev={pm.used} goodWhenUp={true} prevPeriod={prevPeriod} testId="delta-active" />}
             </div>
             <div className="flex items-center gap-1.5 text-[11px]">
               <span className="w-2 h-2 rounded-full bg-gray-300" />
@@ -213,7 +270,12 @@ export const OverviewTab = ({ data, fromDate, toDate, onNavigate }) => {
               <div className="flex items-center gap-3 mt-2">
                 <Donut pct={pct} color={count > 0 ? c.color : "#e5e7eb"} />
                 <div>
-                  <div className="text-2xl font-semibold" style={{ fontFamily: "Outfit, sans-serif" }}>{count}</div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-2xl font-semibold" style={{ fontFamily: "Outfit, sans-serif" }}>{count}</span>
+                    {pm && <Delta curr={count} prev={pm.catCounts[cid]}
+                      goodWhenUp={cid === "sous_utilise" ? false : (cid === "bonne" || cid === "tres_utilise") ? true : undefined}
+                      prevPeriod={prevPeriod} testId={`delta-cat-${cid}`} />}
+                  </div>
                   <div className="text-[10px] text-gray-400">vehicule{count > 1 ? "s" : ""} · {c.seuil}</div>
                 </div>
               </div>
@@ -224,8 +286,13 @@ export const OverviewTab = ({ data, fromDate, toDate, onNavigate }) => {
         {/* Card 6 — km / vehicule utilise */}
         <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4" data-testid="kpi-km-per-used">
           <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Km moy. / utilise</div>
-          <div className="text-2xl font-semibold mt-1" style={{ fontFamily: "Outfit, sans-serif" }}>{m.kmPerUsed}</div>
-          <div className="text-[10px] text-gray-400">{Math.round(m.totalKm)} km / {m.used.length} vehicule{m.used.length > 1 ? "s" : ""} utilise{m.used.length > 1 ? "s" : ""}</div>
+          <div className="flex items-center gap-1.5 mt-1">
+            <span className="text-2xl font-semibold" style={{ fontFamily: "Outfit, sans-serif" }}>{m.kmPerUsed}</span>
+            {pm && <Delta curr={m.kmPerUsed} prev={pm.kmPerUsed} unit=" km" prevPeriod={prevPeriod} testId="delta-km-per-used" />}
+          </div>
+          <div className="text-[10px] text-gray-400">{Math.round(m.totalKm)} km / {m.used.length} vehicule{m.used.length > 1 ? "s" : ""} utilise{m.used.length > 1 ? "s" : ""}
+            {pm && <> <Delta curr={Math.round(m.totalKm)} prev={pm.totalKm} unit=" km" prevPeriod={prevPeriod} testId="delta-total-km" /></>}
+          </div>
           {m.daily.length > 1 && (
             <div className="h-9 mt-1">
               <ResponsiveContainer width="100%" height={36}>
@@ -431,7 +498,7 @@ export const OverviewTab = ({ data, fromDate, toDate, onNavigate }) => {
       {/* ═══ Source footer ═══ */}
       <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 rounded-xl border border-gray-200">
         <div className="w-2 h-2 rounded-full bg-emerald-500" />
-        <span className="text-[10px] text-gray-500">Donnees 100% Navixy — aucune estimation. Categories : sans activite 0% · sous-utilise &lt;30% · modere 30–59% · bonne 60–84% · forte ≥85% (jours actifs / jours periode).</span>
+        <span className="text-[10px] text-gray-500">Donnees 100% Navixy — aucune estimation. Categories : sans activite 0% · sous-utilise &lt;30% · modere 30–59% · bonne 60–84% · forte ≥85% (jours actifs / jours periode).{pm ? ` Comparaison vs periode precedente : ${prevPeriod.from} au ${prevPeriod.to}.` : ""}</span>
         <span className="text-[10px] text-gray-400 ml-auto">{fromDate} au {toDate}</span>
       </div>
     </div>

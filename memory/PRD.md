@@ -22,6 +22,10 @@ Vue generale | Analyse flotte | Conducteurs | Vehicules | Couts | IoT | (Audit v
 - Rangee 3: Anomalies & alertes (regles deterministes cliquables), Conducteurs & score eco
   (top 5 notations natives Navixy plugin 46, fetch lazy), Actions recommandees + Vehicule snapshot (top 5 km)
 - Header: "X en ligne" (connexion instantanee) ≠ "Flotte active" (utilisation periode)
+- Comparaison periode precedente (iter 11b): badges Delta reels sur les 6 KPI
+  (flotte active, 4 categories, km moy/utilise + km total) via /fleet/efficiency sur la
+  periode precedente de meme duree; tooltip = valeur precedente + dates; couleur bonne/mauvaise
+  seulement quand univoque (active up=vert, sous-utilise up=rouge), sinon neutre; footer mentionne les dates
 - AUCUNE metrique inventee (pas de TCO/satisfaction/usure) — couts uniquement via config carburant CHF
 - Anciens drawers Vue generale remplaces par navigation croisee vers les onglets detailles
 - Tests: iteration_11.json — 100% frontend + regression tous onglets
