@@ -1,0 +1,37 @@
+{
+  "summary": "Iteration 13 (Vehicules → module administratif) fully validated on backend + frontend. Backend: 9/9 pytest cases pass in 2.14s (list_ok, put_general_persists+GET, put_leasing/assurance/carte_grise, invalid_section→400, controle add/update-done/delete, etat add/delete, document upload/download-with-byte-equality/delete+file-removed-from-disk, 26MB upload→413, ZZ cleanup resets 4 sections to {} and purges TEST_ artefacts). Frontend on live preview URL: (1) Only 4 tabs visible — tab-overview/tab-analyse/tab-drivers/tab-vehicles; tab-costs and tab-iot correctly removed. (2) Vehicules tab renders header 'Véhicules' with subtitle, vehicles-search input, vehicles-admin-table with row vehicle-admin-row-781479 showing KM cell '137 577 km' (real GPS total_odometer) and three badges (badge-leasing/assurance/controle-781479) all showing gray '—' when no dates present. (3) Row click opens vehicle-sheet drawer with 7 sheet-tab-* (general/leasing/assurance/carte_grise/etat/controles/documents). (4) Général edit flow — section-general-edit opens inputs (section-general-input-marque/modele/responsable, no input for readonly _km/_groupe/_tracker as expected), saving persists and section-general-value-marque displays 'Audi'. (5) Leasing date_fin at J+10 → 'Dans 10 j' (orange), Assurance date_fin at J−5 → 'Échu depuis 5 j' (red); confirms deadlineBadge formula. (6) Controles add/mark-done/delete lifecycle works with proper data-testid (controle-label-input/controle-date-input/controle-add-btn, controle-done-<id>, controle-del-<id>). (7) Etat des lieux add/delete works. (8) Documents upload via doc-file-input renders doc-item with doc-download-<id> link pointing at /api/vehicles/admin/781479/documents/<id> and doc-del-<id> button; delete removes item. (9) Regression: tab-overview, tab-analyse, tab-drivers all navigate without console errors (0 errors captured throughout the whole flow). FINAL CLEANUP DONE: MongoDB record for tracker 781479 is now {general:{}, leasing:{}, assurance:{}, carte_grise:{}, controles:[], etat_des_lieux:[], documents:[]} — fiche vierge as required.",
+  "backend_issues": {"critical": [], "minor": []},
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": [
+      {"screen": "VehicleSheet / EtatTab & EtatTab.jsx", "issues": ["Le bouton de suppression d'une entrée 'État des lieux' (icône Trash2 à droite de etat-item-<id>) n'a pas de data-testid propre — les autres entités (contrôles: controle-del-<id>, documents: doc-del-<id>) suivent la convention. Ajouter data-testid='etat-del-<id>' pour la cohérence et la testabilité automatisée."]}
+    ]
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_vehicle_admin.py",
+    "/app/test_reports/pytest/iter13.xml"
+  ],
+  "action_items": [
+    "Ajouter data-testid='etat-del-<id>' sur le bouton de suppression des états des lieux (VehiclesTab.jsx L181) — cohérence avec controle-del-* et doc-del-*.",
+    "Note UX mineure: lors du 'cleanup' via édition/enregistrement avec inputs vides, les sections stockent {marque:'', modele:'', ...} au lieu de {} — n'affecte pas les badges (chaînes vides = falsy → '—') mais pourrait être normalisé côté backend (ignorer les valeurs vides / omettre les clés vides à l'upsert) si un état 'fiche vierge' strict est attendu."
+  ],
+  "critical_code_review_comments": [
+    "vehicle_admin.py L14-17: EMPTY_DOC utilisé avec $setOnInsert pour toutes les sections sauf celle mise à jour est correct, mais si le document existe déjà et qu'une section absente est reçue, $setOnInsert est ignoré → OK. Cependant l'endpoint PUT accepte payload.data=None et le convertit en {} — bon.",
+    "vehicle_admin.py L131-136: le contrôle de taille 25 Mo est effectué pendant la lecture par chunks — bon; toutefois `while chunk := await file.read(...)` peut consommer beaucoup de RAM si le client envoie plusieurs Mo malgré tout — envisager streaming direct vers disque avec un compteur (déjà le cas). ✅",
+    "vehicle_admin.py L128: le préfixe `{doc_id}_{fname}` sur disque garantit l'unicité; bonne pratique. Le doc_id UUID sert de clé primaire.",
+    "VehiclesTab.jsx L181: bouton Trash2 sans data-testid (voir action_items).",
+    "VehiclesTab.jsx L385-390: /api/groups fetch swallows errors silently (déjà noté en iter 12). Pas critique ici mais empêche le nom du groupe d'apparaître dans la fiche si /api/groups plante."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_vehicle_admin.py",
+    "/app/test_reports/iteration_13.json"
+  ],
+  "success_rate": {"backend": "100% (9/9 pytest)", "frontend": "100% (all 13 review checks passed, 0 console errors)"},
+  "seed_data_creation": "Aucune donnée de test résiduelle. Tous les artefacts TEST_ (sections general/leasing/assurance/carte_grise, contrôles, états, documents + fichier disque) ont été supprimés. Vérifié via GET /api/vehicles/admin final: record 781479 = {general:{}, leasing:{}, assurance:{}, carte_grise:{}, controles:[], etat_des_lieux:[], documents:[]}.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "Aucune (pas d'auth). Tenant preview='default'.",
+  "context_for_next_testing_agent": "Iteration 13 Véhicules-Admin fully validated end-to-end. Router mounted at /api/vehicles/admin (voir server.py include_router). Collection Mongo: vehicle_admin (clé composite tenant+tracker_id). Uploads sur disque: /app/backend/uploads/default/{tracker_id}/{doc_id}_{filename}. Frontend: 7 sheet-tabs (general/leasing/assurance/carte_grise/etat/controles/documents), data-testid conventions: badge-{leasing|assurance|controle}-<tid>, vehicle-admin-row-<tid>, section-<name>-{edit|save|input|value}-<key>, controle-{label|date}-input+controle-add-btn+controle-done-<id>+controle-del-<id>, etat-date-input+etat-add-btn (⚠ pas de etat-del-<id>), doc-file-input+doc-category-select+doc-download-<id>+doc-del-<id>. Formule des badges (frontend): rouge si days<0, orange si 0≤days<30, vert si days≥30, gris '—' si pas de date. Le contrôle affiché dans la table = nextControle = plus proche due_date non effectué. Km/Groupe/Tracker sont readonly côté UI (pas d'input) — sourcés du feed GPS.",
+  "rca_of_the_issue": "N/A — aucune régression détectée. Seul point mineur: manque de data-testid sur le bouton de suppression des états des lieux (facile à corriger)."
+}

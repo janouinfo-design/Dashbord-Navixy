@@ -1,150 +1,489 @@
-import React, { useState } from "react";
-import { MiniKPI } from "@/components/shared/UIComponents";
-import { getScoreBg, getScoreColor } from "@/lib/metrics";
+import React, { useState, useEffect, useMemo, useCallback } from "react";
+import { API, api } from "@/lib/api";
 import {
-  Truck, Wifi, WifiOff, XCircle, MapPin, Activity, DollarSign,
-  Search, ChevronDown, ChevronUp, Gauge, Clock, Fuel, Navigation,
-  Zap, Filter
+  Truck, Search, ChevronRight, X, Pencil, Check, Plus, Trash2,
+  FileText, Download, Upload, Hash, Gauge, Radio, ShieldCheck,
+  CreditCard, ClipboardList, FolderOpen, Car, Loader2
 } from "lucide-react";
 
-const ClickKPI = ({ label, value, unit, icon: Icon, color, subtitle, filterKey, isActive, onToggle }) => (
-  <div onClick={() => filterKey && onToggle(filterKey)}
-    className={`kpi-card bg-white rounded-xl p-5 min-h-[100px] flex flex-col justify-between cursor-pointer transition-all ${isActive ? 'ring-2 ring-[#111] shadow-md' : ''}`}>
-    <div className="flex items-center gap-1.5"><Icon size={13} className={isActive ? 'text-[#111]' : 'text-gray-400'} /><span className={`text-[10px] font-medium uppercase tracking-wider ${isActive ? 'text-[#111]' : 'text-gray-400'}`}>{label}</span></div>
-    <div><div className={`text-2xl font-semibold ${color || 'text-gray-900'}`} style={{ fontFamily: 'Outfit, sans-serif' }}>{value}{unit && <span className="text-sm font-normal text-gray-400 ml-1">{unit}</span>}</div>
-      {subtitle && <div className="text-[10px] text-gray-400 mt-0.5">{subtitle}</div>}
-      {filterKey && <div className={`text-[9px] mt-1 ${isActive ? 'text-[#111] font-medium' : 'text-gray-300'}`}>{isActive ? 'Filtre actif' : 'Cliquer pour filtrer'}</div>}
-    </div>
-  </div>
-);
+// ─── Échéances : rouge = échu, orange < 30 j, vert sinon ───
+const deadlineBadge = (dateStr) => {
+  if (!dateStr) return { label: "—", cls: "bg-gray-50 text-gray-400 border-gray-200", days: null };
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const d = new Date(dateStr + "T00:00:00");
+  const days = Math.round((d - today) / 86400000);
+  if (days < 0) return { label: `Échu depuis ${-days} j`, cls: "bg-red-50 text-red-600 border-red-200", days };
+  if (days < 30) return { label: `Dans ${days} j`, cls: "bg-amber-50 text-amber-700 border-amber-200", days };
+  return { label: `Dans ${days} j`, cls: "bg-emerald-50 text-emerald-700 border-emerald-200", days };
+};
 
-export const VehiclesTab = ({ data }) => {
-  const { stats, comparison } = data;
-  const [search, setSearch] = useState('');
-  const [sortBy, setSortBy] = useState('mileage');
-  const [sortDir, setSortDir] = useState('desc');
-  const [filterStatus, setFilterStatus] = useState('all');
-  const [expandedVehicle, setExpandedVehicle] = useState(null);
-  const [activeKPI, setActiveKPI] = useState(null);
+const Badge = ({ date, testId }) => {
+  const b = deadlineBadge(date);
+  return <span className={`inline-flex items-center gap-1 px-2 py-1 rounded-full border text-[10px] font-medium whitespace-nowrap ${b.cls}`} data-testid={testId}>
+    {b.days !== null && <span className={`w-1.5 h-1.5 rounded-full ${b.days < 0 ? "bg-red-500" : b.days < 30 ? "bg-amber-500" : "bg-emerald-500"}`} />}{b.label}
+  </span>;
+};
 
-  const compMap = {};
-  (comparison?.vehicles || []).forEach(v => { compMap[v.tracker_id] = v; });
+const fmtKm = (v) => v || v === 0 ? `${Math.round(v).toLocaleString("fr-FR")} km` : "—";
+const fmtSize = (b) => b > 1048576 ? `${(b / 1048576).toFixed(1)} Mo` : `${Math.max(1, Math.round(b / 1024))} Ko`;
+const fmtDate = (s) => s ? new Date(s).toLocaleDateString("fr-FR") : "—";
 
-  const vehicles = (stats?.vehicles || []).map(v => ({
-    ...v,
-    utilization_score: compMap[v.tracker_id]?.utilization_score || 0,
-    total_distance_week: compMap[v.tracker_id]?.total_distance_week || 0,
-    active_days: compMap[v.tracker_id]?.active_days || 0,
-  }));
+// Contrôle le plus proche non effectué
+const nextControle = (controles) => {
+  const open = (controles || []).filter(c => c.due_date && !c.done_date).sort((a, b) => a.due_date.localeCompare(b.due_date));
+  return open[0]?.due_date || null;
+};
 
-  const totalV = vehicles.length;
-  const activeV = vehicles.filter(v => v.connection_status === 'active').length;
-  const offlineV = totalV - activeV;
-  const underUsedList = vehicles.filter(v => v.mileage < 10 && v.connection_status !== 'active');
-  const totalKm = stats?.summary?.total_mileage || 0;
-  const totalEngineH = stats?.summary?.total_engine_hours || 0;
+// ─── Section éditable générique ───
+const EditableSection = ({ title, subtitle, fields, values, readonlyFields = [], onSave, testId }) => {
+  const [editing, setEditing] = useState(false);
+  const [form, setForm] = useState({});
+  const [saving, setSaving] = useState(false);
 
-  const handleKPI = (key) => setActiveKPI(activeKPI === key ? null : key);
-
-  const kpiIds = (() => {
-    if (!activeKPI) return null;
-    switch (activeKPI) {
-      case 'active': return vehicles.filter(v => v.connection_status === 'active').map(v => v.tracker_id);
-      case 'offline': return vehicles.filter(v => v.connection_status !== 'active').map(v => v.tracker_id);
-      case 'underused': return underUsedList.map(v => v.tracker_id);
-      default: return null;
-    }
-  })();
-
-  const filtered = vehicles.filter(v => {
-    if (kpiIds && !kpiIds.includes(v.tracker_id)) return false;
-    if (search && !v.label.toLowerCase().includes(search.toLowerCase())) return false;
-    if (filterStatus === 'active' && v.connection_status !== 'active') return false;
-    if (filterStatus === 'offline' && v.connection_status === 'active') return false;
-    return true;
-  }).sort((a, b) => {
-    let va = a[sortBy] || 0, vb = b[sortBy] || 0;
-    if (typeof va === 'string') { va = va.toLowerCase(); vb = (vb || '').toLowerCase(); }
-    return sortDir === 'asc' ? (va > vb ? 1 : -1) : (va < vb ? 1 : -1);
-  });
-
-  const toggleSort = (col) => { if (sortBy === col) setSortDir(d => d === 'asc' ? 'desc' : 'asc'); else { setSortBy(col); setSortDir('desc'); } };
+  const startEdit = () => { setForm({ ...values }); setEditing(true); };
+  const save = async () => {
+    setSaving(true);
+    await onSave(form);
+    setSaving(false);
+    setEditing(false);
+  };
 
   return (
-    <div className="p-4 lg:p-8 space-y-6 max-w-[1600px] mx-auto" data-testid="vehicles-tab">
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-        <MiniKPI label="Total" value={totalV} icon={Truck} />
-        <ClickKPI label="Actifs" value={activeV} icon={Wifi} color="text-emerald-600" filterKey="active" isActive={activeKPI === 'active'} onToggle={handleKPI} />
-        <ClickKPI label="Hors ligne" value={offlineV} icon={WifiOff} color={offlineV > 0 ? 'text-red-500' : 'text-gray-400'} filterKey="offline" isActive={activeKPI === 'offline'} onToggle={handleKPI} />
-        <ClickKPI label="Sous-utilises" value={underUsedList.length} icon={XCircle} color={underUsedList.length > 0 ? 'text-amber-600' : 'text-gray-400'} subtitle="< 10 km" filterKey="underused" isActive={activeKPI === 'underused'} onToggle={handleKPI} />
-        <MiniKPI label="Distance" value={totalKm.toFixed(0)} unit="km" icon={MapPin} />
-        <MiniKPI label="Moteur" value={totalEngineH.toFixed(0)} unit="h" icon={Activity} />
-      </div>
-
-      {activeKPI && (
-        <div className="flex items-center gap-2 px-4 py-2.5 bg-[#111] text-white rounded-xl text-xs font-medium">
-          <Filter size={13} /><span>{activeKPI === 'active' ? 'Actifs' : activeKPI === 'offline' ? 'Hors ligne' : 'Sous-utilises'} — {kpiIds?.length || 0} vehicules</span>
-          <button onClick={() => setActiveKPI(null)} className="ml-auto px-2 py-0.5 bg-white/20 rounded-lg hover:bg-white/30 text-[10px]">Retirer</button>
+    <div className="bg-white border border-gray-200 rounded-xl p-5" data-testid={testId}>
+      <div className="flex items-center justify-between mb-4">
+        <div>
+          <h4 className="text-sm font-semibold text-gray-900">{title}</h4>
+          {subtitle && <p className="text-[10px] text-gray-400">{subtitle}</p>}
         </div>
-      )}
+        {!editing ? (
+          <button onClick={startEdit} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-white border border-gray-200 rounded-lg hover:bg-gray-50" data-testid={`${testId}-edit`}>
+            <Pencil size={12} />Modifier
+          </button>
+        ) : (
+          <div className="flex gap-2">
+            <button onClick={() => setEditing(false)} className="px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50">Annuler</button>
+            <button onClick={save} disabled={saving} className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium bg-[#111] text-white rounded-lg hover:bg-black" data-testid={`${testId}-save`}>
+              {saving ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}Enregistrer
+            </button>
+          </div>
+        )}
+      </div>
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+        {fields.map(f => (
+          <div key={f.key} className="border border-gray-100 rounded-lg p-3 bg-gray-50/50">
+            <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1 flex items-center gap-1">
+              {f.icon && <f.icon size={10} />}{f.label}
+            </div>
+            {editing && !f.readonly ? (
+              <input type={f.type || "text"} value={form[f.key] ?? ""}
+                onChange={(e) => setForm(p => ({ ...p, [f.key]: e.target.value }))}
+                className="w-full text-xs bg-white border border-gray-200 rounded-md px-2 py-1.5 focus:outline-none focus:border-gray-400"
+                data-testid={`${testId}-input-${f.key}`} />
+            ) : (
+              <div className="text-sm text-gray-800 font-medium min-h-[20px]" data-testid={`${testId}-value-${f.key}`}>
+                {f.readonly ? (f.value ?? "—") : (f.type === "date" ? fmtDate(values[f.key]) : (values[f.key] || "—"))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+};
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="px-6 py-4 border-b border-gray-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <h3 className="text-sm font-semibold uppercase tracking-wider text-gray-800" style={{ fontFamily: 'Outfit, sans-serif' }}>Vehicules ({filtered.length})</h3>
+// ─── Onglet Contrôles ───
+const ControlesTab = ({ tid, record, refresh }) => {
+  const [form, setForm] = useState({ label: "", due_date: "", notes: "" });
+  const add = async () => {
+    if (!form.label || !form.due_date) return;
+    await api.post(`${API}/vehicles/admin/${tid}/controles`, form);
+    setForm({ label: "", due_date: "", notes: "" });
+    refresh();
+  };
+  const markDone = async (cid) => {
+    await api.put(`${API}/vehicles/admin/${tid}/controles/${cid}`, { done_date: new Date().toISOString().split("T")[0] });
+    refresh();
+  };
+  const del = async (cid) => { await api.delete(`${API}/vehicles/admin/${tid}/controles/${cid}`); refresh(); };
+  const items = [...(record.controles || [])].sort((a, b) => (a.due_date || "").localeCompare(b.due_date || ""));
+
+  return (
+    <div className="space-y-3" data-testid="tab-content-controles">
+      <div className="bg-white border border-gray-200 rounded-xl p-4">
+        <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Ajouter un contrôle</div>
+        <div className="flex flex-wrap gap-2">
+          <input placeholder="Libellé (ex : Contrôle technique)" value={form.label} onChange={e => setForm(p => ({ ...p, label: e.target.value }))}
+            className="flex-1 min-w-[160px] text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none" data-testid="controle-label-input" />
+          <input type="date" value={form.due_date} onChange={e => setForm(p => ({ ...p, due_date: e.target.value }))}
+            className="text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none" data-testid="controle-date-input" />
+          <input placeholder="Notes" value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}
+            className="flex-1 min-w-[120px] text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none" />
+          <button onClick={add} className="flex items-center gap-1 px-3 py-2 text-xs font-medium bg-[#111] text-white rounded-lg" data-testid="controle-add-btn"><Plus size={12} />Ajouter</button>
+        </div>
+      </div>
+      {items.length === 0 ? (
+        <div className="text-center text-xs text-gray-400 py-8">Aucun contrôle enregistré</div>
+      ) : items.map(c => (
+        <div key={c.id} className="flex items-center justify-between bg-white border border-gray-200 rounded-xl p-3.5" data-testid={`controle-item-${c.id}`}>
+          <div>
+            <div className="text-xs font-medium text-gray-900">{c.label}</div>
+            <div className="text-[10px] text-gray-400">Échéance : {fmtDate(c.due_date)}{c.done_date ? ` — effectué le ${fmtDate(c.done_date)}` : ""}{c.notes ? ` · ${c.notes}` : ""}</div>
+          </div>
           <div className="flex items-center gap-2">
-            <div className="relative"><Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" /><input type="text" placeholder="Rechercher..." value={search} onChange={(e) => setSearch(e.target.value)} className="pl-9 pr-3 py-1.5 text-xs bg-gray-50 border border-gray-200 rounded-lg focus:outline-none w-44" data-testid="vehicle-search" /></div>
-            <select value={filterStatus} onChange={(e) => setFilterStatus(e.target.value)} className="text-xs bg-gray-50 border border-gray-200 rounded-lg px-3 py-1.5 focus:outline-none" data-testid="vehicle-filter"><option value="all">Tous</option><option value="active">Actifs</option><option value="offline">Offline</option></select>
+            {c.done_date ? <span className="text-[10px] font-medium text-emerald-600 bg-emerald-50 border border-emerald-100 rounded-full px-2 py-1">Effectué</span> : <Badge date={c.due_date} />}
+            {!c.done_date && <button onClick={() => markDone(c.id)} className="text-[10px] px-2 py-1 border border-gray-200 rounded-lg hover:bg-gray-50" data-testid={`controle-done-${c.id}`}>Marquer effectué</button>}
+            <button onClick={() => del(c.id)} className="p-1.5 text-gray-300 hover:text-red-500" data-testid={`controle-del-${c.id}`}><Trash2 size={13} /></button>
           </div>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full">
-            <thead><tr className="border-b border-gray-100">
-              {[{ k: 'label', l: 'Vehicule' }, { k: 'connection_status', l: 'Etat GPS' }, { k: 'mileage', l: 'Km (periode)' }, { k: 'engine_hours', l: 'Moteur (h)' }, { k: 'total_odometer', l: 'Odometre' }, { k: 'last_update', l: 'Dern. comm.' }, { k: 'utilization_score', l: 'Utilisation' }].map(col => (
-                <th key={col.k} onClick={() => toggleSort(col.k)} className="px-4 py-3 text-left text-[10px] font-medium uppercase tracking-wider text-gray-400 cursor-pointer hover:text-gray-600 select-none whitespace-nowrap">
-                  <span className="flex items-center gap-1">{col.l}{sortBy === col.k && (sortDir === 'asc' ? <ChevronUp size={11} /> : <ChevronDown size={11} />)}</span>
-                </th>
-              ))}
-            </tr></thead>
-            <tbody>
-              {filtered.map(v => (
-                <React.Fragment key={v.tracker_id}>
-                  <tr className={`fleet-row border-b border-gray-50 cursor-pointer ${expandedVehicle === v.tracker_id ? 'bg-gray-50' : ''}`} onClick={() => setExpandedVehicle(expandedVehicle === v.tracker_id ? null : v.tracker_id)} data-testid={`vehicle-row-${v.tracker_id}`}>
-                    <td className="px-4 py-3"><div className="flex items-center gap-2"><ChevronDown size={12} className={`text-gray-400 transition-transform ${expandedVehicle === v.tracker_id ? 'rotate-180' : ''}`} /><div><div className="text-sm font-medium text-gray-900">{v.label}</div><div className="text-[10px] text-gray-400">{v.model || '-'}</div></div></div></td>
-                    <td className="px-4 py-3"><span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-medium border ${v.connection_status === 'active' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-gray-50 text-gray-600 border-gray-200'}`}><span className={`w-1.5 h-1.5 rounded-full ${v.connection_status === 'active' ? 'bg-emerald-500 pulse-dot' : 'bg-gray-400'}`} />{v.connection_status === 'active' ? 'Actif' : 'Offline'}</span></td>
-                    <td className="px-4 py-3"><span className="text-xs font-medium text-gray-700">{(v.mileage || 0).toFixed(1)} km</span></td>
-                    <td className="px-4 py-3"><span className="text-xs text-gray-600">{(v.engine_hours || 0).toFixed(0)}h</span></td>
-                    <td className="px-4 py-3"><span className="text-xs text-gray-600">{Math.round(v.total_odometer || 0).toLocaleString('fr-FR')} km</span></td>
-                    <td className="px-4 py-3"><span className="text-[10px] text-gray-400">{v.last_update ? new Date(v.last_update).toLocaleDateString('fr-FR') : '-'}</span></td>
-                    <td className="px-4 py-3"><div className="flex items-center gap-2"><div className="w-10 h-1.5 bg-gray-100 rounded-full overflow-hidden"><div className={`h-full rounded-full ${getScoreBg(v.utilization_score)}`} style={{ width: `${Math.min(100, v.utilization_score)}%` }} /></div><span className={`text-xs font-semibold ${getScoreColor(v.utilization_score)}`}>{v.utilization_score}%</span></div></td>
-                  </tr>
-                  {expandedVehicle === v.tracker_id && (
-                    <tr><td colSpan={7} className="px-0 py-0">
-                      <div className="bg-gray-50 border-b border-gray-200 px-6 py-4">
-                        <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-3">
-                          {[
-                            { l: 'Distance', v: `${(v.mileage || 0).toFixed(1)} km`, i: MapPin, c: 'text-blue-500' },
-                            { l: 'Odometre', v: `${Math.round(v.total_odometer || 0).toLocaleString('fr-FR')} km`, i: Navigation, c: 'text-gray-500' },
-                            { l: 'Moteur', v: `${(v.engine_hours || 0).toFixed(0)} h`, i: Zap, c: 'text-purple-500' },
-                            { l: 'Vitesse', v: `${v.speed || 0} km/h`, i: Gauge, c: 'text-blue-500' },
-                            { l: 'Mouvement', v: v.movement_status === 'moving' ? 'En route' : v.movement_status === 'idle' ? 'Ralenti' : 'Arrete', i: Clock, c: v.movement_status === 'moving' ? 'text-emerald-500' : 'text-gray-500' },
-                            { l: 'Carburant', v: v.fuel_cost_chf != null ? `${v.fuel_cost_chf} CHF` : 'N/A', i: Fuel, c: 'text-amber-500' },
-                          ].map((item, idx) => (
-                            <div key={idx} className="bg-white rounded-lg p-3 border border-gray-200">
-                              <div className="flex items-center gap-1 mb-1"><item.i size={11} className={item.c} /><span className="text-[9px] text-gray-400 uppercase">{item.l}</span></div>
-                              <div className="text-base font-semibold text-gray-900" style={{ fontFamily: 'Outfit, sans-serif' }}>{item.v}</div>
-                            </div>
-                          ))}
-                        </div>
-                        <div className="mt-2 text-[10px] text-gray-400">{v.last_update && `MAJ: ${new Date(v.last_update).toLocaleString('fr-FR')}`}{v.location && v.location.lat !== 0 && ` | GPS: ${v.location.lat?.toFixed(4)}, ${v.location.lng?.toFixed(4)}`}</div>
-                      </div>
-                    </td></tr>
-                  )}
-                </React.Fragment>
-              ))}
-            </tbody>
-          </table>
+      ))}
+    </div>
+  );
+};
+
+// ─── Onglet État des lieux ───
+const EtatTab = ({ tid, record, refresh }) => {
+  const [form, setForm] = useState({ date: "", km: "", etat: "Bon", notes: "" });
+  const add = async () => {
+    if (!form.date) return;
+    await api.post(`${API}/vehicles/admin/${tid}/etat-des-lieux`, form);
+    setForm({ date: "", km: "", etat: "Bon", notes: "" });
+    refresh();
+  };
+  const del = async (eid) => { await api.delete(`${API}/vehicles/admin/${tid}/etat-des-lieux/${eid}`); refresh(); };
+  const items = [...(record.etat_des_lieux || [])].sort((a, b) => (b.date || "").localeCompare(a.date || ""));
+
+  return (
+    <div className="space-y-3" data-testid="tab-content-etat">
+      <div className="bg-white border border-gray-200 rounded-xl p-4">
+        <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Nouvel état des lieux</div>
+        <div className="flex flex-wrap gap-2">
+          <input type="date" value={form.date} onChange={e => setForm(p => ({ ...p, date: e.target.value }))}
+            className="text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none" data-testid="etat-date-input" />
+          <input type="number" placeholder="Km relevé" value={form.km} onChange={e => setForm(p => ({ ...p, km: e.target.value }))}
+            className="w-28 text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none" />
+          <select value={form.etat} onChange={e => setForm(p => ({ ...p, etat: e.target.value }))}
+            className="text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none bg-white">
+            {["Bon", "Correct", "Usure normale", "Endommagé"].map(o => <option key={o}>{o}</option>)}
+          </select>
+          <input placeholder="Notes (rayures, pneus...)" value={form.notes} onChange={e => setForm(p => ({ ...p, notes: e.target.value }))}
+            className="flex-1 min-w-[140px] text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none" />
+          <button onClick={add} className="flex items-center gap-1 px-3 py-2 text-xs font-medium bg-[#111] text-white rounded-lg" data-testid="etat-add-btn"><Plus size={12} />Ajouter</button>
         </div>
       </div>
+      {items.length === 0 ? (
+        <div className="text-center text-xs text-gray-400 py-8">Aucun état des lieux enregistré</div>
+      ) : items.map(e => (
+        <div key={e.id} className="flex items-center justify-between bg-white border border-gray-200 rounded-xl p-3.5" data-testid={`etat-item-${e.id}`}>
+          <div>
+            <div className="text-xs font-medium text-gray-900">{fmtDate(e.date)} — {e.etat}{e.km ? ` · ${Number(e.km).toLocaleString("fr-FR")} km relevés` : ""}</div>
+            {e.notes && <div className="text-[10px] text-gray-400">{e.notes}</div>}
+          </div>
+          <button onClick={() => del(e.id)} className="p-1.5 text-gray-300 hover:text-red-500" data-testid={`etat-del-${e.id}`}><Trash2 size={13} /></button>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// ─── Onglet Documents ───
+const DocumentsTab = ({ tid, record, refresh }) => {
+  const [category, setCategory] = useState("Carte grise");
+  const [uploading, setUploading] = useState(false);
+  const [error, setError] = useState(null);
+
+  const upload = async (file) => {
+    if (!file) return;
+    setUploading(true); setError(null);
+    const fd = new FormData();
+    fd.append("file", file);
+    fd.append("category", category);
+    try {
+      await api.post(`${API}/vehicles/admin/${tid}/documents`, fd, { headers: { "Content-Type": "multipart/form-data" }, timeout: 120000 });
+      refresh();
+    } catch (e) {
+      setError(e.response?.status === 413 ? "Fichier trop volumineux (max 25 Mo)" : "Échec de l'envoi du fichier");
+    }
+    setUploading(false);
+  };
+  const del = async (docId) => { await api.delete(`${API}/vehicles/admin/${tid}/documents/${docId}`); refresh(); };
+  const items = [...(record.documents || [])].sort((a, b) => (b.uploaded_at || "").localeCompare(a.uploaded_at || ""));
+
+  return (
+    <div className="space-y-3" data-testid="tab-content-documents">
+      <div className="bg-white border border-gray-200 rounded-xl p-4">
+        <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2">Ajouter un document (max 25 Mo)</div>
+        <div className="flex flex-wrap items-center gap-2">
+          <select value={category} onChange={e => setCategory(e.target.value)}
+            className="text-xs border border-gray-200 rounded-lg px-3 py-2 focus:outline-none bg-white" data-testid="doc-category-select">
+            {["Carte grise", "Leasing", "Assurance", "Contrôle", "Facture", "Autre"].map(o => <option key={o}>{o}</option>)}
+          </select>
+          <label className={`flex items-center gap-1.5 px-3 py-2 text-xs font-medium rounded-lg cursor-pointer ${uploading ? "bg-gray-100 text-gray-400" : "bg-[#111] text-white hover:bg-black"}`}>
+            {uploading ? <Loader2 size={12} className="animate-spin" /> : <Upload size={12} />}
+            {uploading ? "Envoi en cours…" : "Choisir un fichier"}
+            <input type="file" className="hidden" disabled={uploading} onChange={e => upload(e.target.files[0])} data-testid="doc-file-input" />
+          </label>
+          {error && <span className="text-[10px] text-red-500" data-testid="doc-error">{error}</span>}
+        </div>
+      </div>
+      {items.length === 0 ? (
+        <div className="text-center text-xs text-gray-400 py-8">Aucun document</div>
+      ) : items.map(d => (
+        <div key={d.id} className="flex items-center justify-between bg-white border border-gray-200 rounded-xl p-3.5" data-testid={`doc-item-${d.id}`}>
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-9 h-9 rounded-lg bg-gray-50 border border-gray-200 flex items-center justify-center shrink-0"><FileText size={15} className="text-gray-400" /></div>
+            <div className="min-w-0">
+              <div className="text-xs font-medium text-gray-900 truncate">{d.filename}</div>
+              <div className="text-[10px] text-gray-400">{d.category} · {fmtSize(d.size)} · {fmtDate(d.uploaded_at)}</div>
+            </div>
+          </div>
+          <div className="flex items-center gap-1 shrink-0">
+            <a href={`${API}/vehicles/admin/${tid}/documents/${d.id}`} target="_blank" rel="noreferrer"
+              className="p-1.5 text-gray-400 hover:text-gray-700" title="Télécharger" data-testid={`doc-download-${d.id}`}><Download size={14} /></a>
+            <button onClick={() => del(d.id)} className="p-1.5 text-gray-300 hover:text-red-500" data-testid={`doc-del-${d.id}`}><Trash2 size={13} /></button>
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+// ─── Fiche véhicule (drawer) ───
+const VehicleSheet = ({ vehicle, record, groupName, onClose, onSaved }) => {
+  const [tab, setTab] = useState("general");
+  const tid = vehicle.tracker_id;
+
+  const saveSection = async (section, data) => {
+    const res = await api.put(`${API}/vehicles/admin/${tid}`, { section, data });
+    if (res.data.success) onSaved(tid, res.data.record);
+  };
+  const refresh = async () => {
+    const res = await api.get(`${API}/vehicles/admin`);
+    if (res.data.success) onSaved(tid, res.data.records[String(tid)] || record);
+  };
+
+  const TABS = [
+    { id: "general", label: "Général", icon: Car },
+    { id: "leasing", label: "Leasing", icon: CreditCard },
+    { id: "assurance", label: "Assurance", icon: ShieldCheck },
+    { id: "carte_grise", label: "Carte grise", icon: FileText },
+    { id: "etat", label: "État des lieux", icon: ClipboardList },
+    { id: "controles", label: "Contrôles", icon: Check },
+    { id: "documents", label: "Documents", icon: FolderOpen },
+  ];
+
+  const g = record.general || {};
+
+  return (
+    <div className="fixed inset-y-0 right-0 w-full lg:w-[720px] bg-gray-50 shadow-2xl z-50 overflow-y-auto" data-testid="vehicle-sheet">
+      {/* Header */}
+      <div className="sticky top-0 bg-white border-b border-gray-200 px-6 pt-4 z-10">
+        <div className="flex items-start justify-between">
+          <div>
+            <h3 className="text-lg font-semibold" style={{ fontFamily: "Outfit, sans-serif" }}>{vehicle.label}</h3>
+            <div className="flex flex-wrap items-center gap-2 mt-1.5 mb-3">
+              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-gray-200 text-[10px] text-gray-500"><Hash size={10} />VIN {g.vin || "—"}</span>
+              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-gray-200 text-[10px] text-gray-500"><Gauge size={10} />{fmtKm(vehicle.total_odometer)}</span>
+              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-gray-200 text-[10px] text-gray-500"><Radio size={10} />Tracker {tid}</span>
+            </div>
+          </div>
+          <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg" data-testid="sheet-close"><X size={18} className="text-gray-500" /></button>
+        </div>
+        <div className="flex gap-0 overflow-x-auto -mb-px">
+          {TABS.map(t => (
+            <button key={t.id} onClick={() => setTab(t.id)} data-testid={`sheet-tab-${t.id}`}
+              className={`flex items-center gap-1.5 px-3.5 py-2.5 text-xs font-medium whitespace-nowrap border-b-2 transition-colors ${tab === t.id ? "border-[#111] text-[#111]" : "border-transparent text-gray-400 hover:text-gray-600"}`}>
+              <t.icon size={12} />{t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      <div className="p-6">
+        {tab === "general" && (
+          <EditableSection title="Informations générales" subtitle="Identité administrative du véhicule" testId="section-general"
+            values={g} onSave={(data) => saveSection("general", data)}
+            fields={[
+              { key: "marque", label: "Marque" },
+              { key: "modele", label: "Modèle" },
+              { key: "annee", label: "Année" },
+              { key: "vin", label: "VIN" },
+              { key: "_km", label: "Kilométrage (GPS)", readonly: true, value: fmtKm(vehicle.total_odometer) },
+              { key: "_groupe", label: "Groupe", readonly: true, value: groupName || "—" },
+              { key: "base", label: "Base / Site" },
+              { key: "responsable", label: "Responsable" },
+              { key: "_tracker", label: "Tracker GPS", readonly: true, value: String(tid) },
+              { key: "prochaine_maintenance", label: "Prochaine maintenance", type: "date" },
+              { key: "prochaine_expertise", label: "Prochaine expertise", type: "date" },
+            ]} />
+        )}
+        {tab === "leasing" && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2"><span className="text-[10px] text-gray-400 uppercase font-semibold">Échéance :</span><Badge date={(record.leasing || {}).date_fin} testId="leasing-badge" /></div>
+            <EditableSection title="Contrat de leasing" testId="section-leasing"
+              values={record.leasing || {}} onSave={(data) => saveSection("leasing", data)}
+              fields={[
+                { key: "societe", label: "Société de leasing" },
+                { key: "contrat_no", label: "N° de contrat" },
+                { key: "date_debut", label: "Début", type: "date" },
+                { key: "date_fin", label: "Fin", type: "date" },
+                { key: "loyer_mensuel", label: "Loyer mensuel (CHF)", type: "number" },
+                { key: "km_inclus", label: "Km inclus / an", type: "number" },
+                { key: "notes", label: "Notes" },
+              ]} />
+          </div>
+        )}
+        {tab === "assurance" && (
+          <div className="space-y-3">
+            <div className="flex items-center gap-2"><span className="text-[10px] text-gray-400 uppercase font-semibold">Échéance :</span><Badge date={(record.assurance || {}).date_fin} testId="assurance-badge" /></div>
+            <EditableSection title="Assurance" testId="section-assurance"
+              values={record.assurance || {}} onSave={(data) => saveSection("assurance", data)}
+              fields={[
+                { key: "compagnie", label: "Compagnie" },
+                { key: "police_no", label: "N° de police" },
+                { key: "date_debut", label: "Début", type: "date" },
+                { key: "date_fin", label: "Fin", type: "date" },
+                { key: "couverture", label: "Type de couverture" },
+                { key: "franchise", label: "Franchise (CHF)", type: "number" },
+                { key: "notes", label: "Notes" },
+              ]} />
+          </div>
+        )}
+        {tab === "carte_grise" && (
+          <EditableSection title="Carte grise" subtitle="Permis de circulation" testId="section-carte_grise"
+            values={record.carte_grise || {}} onSave={(data) => saveSection("carte_grise", data)}
+            fields={[
+              { key: "numero", label: "Numéro" },
+              { key: "titulaire", label: "Titulaire" },
+              { key: "date_emission", label: "Date d'émission", type: "date" },
+              { key: "canton", label: "Canton" },
+              { key: "notes", label: "Notes" },
+            ]} />
+        )}
+        {tab === "etat" && <EtatTab tid={tid} record={record} refresh={refresh} />}
+        {tab === "controles" && <ControlesTab tid={tid} record={record} refresh={refresh} />}
+        {tab === "documents" && <DocumentsTab tid={tid} record={record} refresh={refresh} />}
+      </div>
+    </div>
+  );
+};
+
+// ═══════════════ MAIN ═══════════════
+export const VehiclesTab = ({ data }) => {
+  const { stats, efficiency } = data;
+  const [search, setSearch] = useState("");
+  const [records, setRecords] = useState({});
+  const [loading, setLoading] = useState(true);
+  const [selected, setSelected] = useState(null);
+  const [groups, setGroups] = useState([]);
+
+  const vehicles = stats?.vehicles || [];
+  const groupIdByTid = useMemo(() => {
+    const m = {};
+    (efficiency?.vehicles || []).forEach(v => { m[v.tracker_id] = v.group_id || 0; });
+    return m;
+  }, [efficiency]);
+  const groupTitle = useMemo(() => Object.fromEntries(groups.map(g => [g.id, g.title])), [groups]);
+
+  useEffect(() => {
+    api.get(`${API}/vehicles/admin`).then(res => { if (res.data.success) setRecords(res.data.records || {}); })
+      .catch(() => {}).finally(() => setLoading(false));
+    api.get(`${API}/groups`).then(res => { if (res.data.success) setGroups(res.data.groups || []); }).catch(() => {});
+  }, []);
+
+  const onSaved = useCallback((tid, record) => {
+    setRecords(prev => ({ ...prev, [String(tid)]: record }));
+  }, []);
+
+  const rows = useMemo(() => {
+    return vehicles
+      .filter(v => !search || v.label.toLowerCase().includes(search.toLowerCase()))
+      .map(v => {
+        const rec = records[String(v.tracker_id)] || { general: {}, leasing: {}, assurance: {}, controles: [], etat_des_lieux: [], documents: [] };
+        return { ...v, rec };
+      })
+      .sort((a, b) => a.label.localeCompare(b.label));
+  }, [vehicles, records, search]);
+
+  const emptyRec = { general: {}, leasing: {}, assurance: {}, carte_grise: {}, controles: [], etat_des_lieux: [], documents: [] };
+
+  return (
+    <div className="p-4 lg:p-8 space-y-5 max-w-[1600px] mx-auto" data-testid="vehicles-tab">
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h2 className="text-xl font-semibold text-gray-900" style={{ fontFamily: "Outfit, sans-serif" }}>Véhicules</h2>
+          <p className="text-xs text-gray-400 mt-0.5">{vehicles.length} véhicules · cliquez sur une ligne pour ouvrir la fiche administrative</p>
+        </div>
+        <div className="relative">
+          <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input type="text" placeholder="Rechercher…" value={search} onChange={e => setSearch(e.target.value)}
+            className="pl-9 pr-3 py-2 text-xs bg-white border border-gray-200 rounded-lg focus:outline-none w-56" data-testid="vehicles-search" />
+        </div>
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto" data-testid="vehicles-admin-table">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 border-b border-gray-100">
+              <th className="px-4 py-3 text-left">Véhicule</th>
+              <th className="px-4 py-3 text-left">Kilométrage</th>
+              <th className="px-4 py-3 text-left">Responsable</th>
+              <th className="px-4 py-3 text-left">Leasing</th>
+              <th className="px-4 py-3 text-left">Assurance</th>
+              <th className="px-4 py-3 text-left">Contrôle</th>
+              <th className="px-2 py-3" />
+            </tr>
+          </thead>
+          <tbody>
+            {loading ? (
+              <tr><td colSpan={7} className="px-4 py-10 text-center text-xs text-gray-400"><Loader2 size={16} className="animate-spin inline mr-2" />Chargement des fiches…</td></tr>
+            ) : rows.map(v => {
+              const g = v.rec.general || {};
+              const marqueModele = [g.marque, g.modele].filter(Boolean).join(" ");
+              return (
+                <tr key={v.tracker_id} className="border-b border-gray-50 hover:bg-gray-50 cursor-pointer transition-colors"
+                  onClick={() => setSelected(v.tracker_id)} data-testid={`vehicle-admin-row-${v.tracker_id}`}>
+                  <td className="px-4 py-3">
+                    <div className="flex items-center gap-3">
+                      <div className="w-9 h-9 rounded-lg bg-gray-50 border border-gray-200 flex items-center justify-center shrink-0"><Truck size={15} className="text-gray-400" /></div>
+                      <div>
+                        <div className="font-medium text-gray-900">{v.label}</div>
+                        <div className="text-[10px] text-gray-400">{marqueModele || v.model}</div>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="px-4 py-3 text-xs text-gray-600 tabular-nums">{fmtKm(v.total_odometer)}</td>
+                  <td className="px-4 py-3 text-xs text-gray-600">{g.responsable || <span className="text-gray-300">—</span>}</td>
+                  <td className="px-4 py-3"><Badge date={(v.rec.leasing || {}).date_fin} testId={`badge-leasing-${v.tracker_id}`} /></td>
+                  <td className="px-4 py-3"><Badge date={(v.rec.assurance || {}).date_fin} testId={`badge-assurance-${v.tracker_id}`} /></td>
+                  <td className="px-4 py-3"><Badge date={nextControle(v.rec.controles)} testId={`badge-controle-${v.tracker_id}`} /></td>
+                  <td className="px-2 py-3"><ChevronRight size={14} className="text-gray-300" /></td>
+                </tr>
+              );
+            })}
+            {!loading && rows.length === 0 && (
+              <tr><td colSpan={7} className="px-4 py-10 text-center text-xs text-gray-400">Aucun véhicule ne correspond à la recherche</td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+
+      <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 rounded-xl border border-gray-200">
+        <span className="w-2 h-2 rounded-full bg-emerald-500" />
+        <span className="text-[10px] text-gray-500">Kilométrage et tracker = données GPS réelles LOGITRAK. Champs administratifs (leasing, assurance, contrôles, documents) = saisie manuelle stockée LOGITRAK. Échéances : rouge = échu · orange &lt; 30 j · vert sinon.</span>
+      </div>
+
+      {selected && (() => {
+        const v = vehicles.find(x => x.tracker_id === selected);
+        if (!v) return null;
+        return (
+          <>
+            <div className="fixed inset-0 bg-black/20 z-40" onClick={() => setSelected(null)} />
+            <VehicleSheet vehicle={v} record={records[String(selected)] || emptyRec}
+              groupName={groupTitle[groupIdByTid[selected]]}
+              onClose={() => setSelected(null)} onSaved={onSaved} />
+          </>
+        );
+      })()}
     </div>
   );
 };

@@ -88,6 +88,18 @@ Vue generale | Analyse flotte | Conducteurs | Vehicules | Couts | IoT | (Audit v
 - Cache tenant 300s (1ere generation 5-45s)
 - Tests: iteration_10.json — 100% backend (9/9) + 100% frontend
 
+## Onglet Vehicules — MODULE ADMINISTRATIF (iter 13)
+- Liste type "Documents": plaque + marque/modele, km GPS reels (total_odometer), responsable,
+  badges echeances Leasing/Assurance/Controle (rouge=echu, orange<30j, vert sinon, gris si vide)
+- Fiche vehicule (drawer 7 onglets): General (marque/modele/annee/VIN/base/responsable/maintenances
+  + readonly km GPS/groupe/tracker), Leasing, Assurance, Carte grise, Etat des lieux (entrees datees),
+  Controles (echeances + marquer effectue), Documents (upload fichiers max 25 Mo)
+- Backend: /app/backend/vehicle_admin.py — routeur /api/vehicles/admin, collection Mongo vehicle_admin
+  (tenant + tracker_id), uploads disque /app/backend/uploads/{tenant}/{tracker_id}/
+- Donnees admin = saisie utilisateur (affichees comme telles); km/tracker = GPS reel
+- Cles vides omises a l'upsert; data-testid complets (etat-del-* ajoute post-test)
+- Tests: iteration_13.json — 100% backend (9/9) + 100% frontend, donnees de test nettoyees
+
 ## Onglets supprimes (iter 12c)
 - Onglets "Couts" et "IoT" RETIRES de la navigation (demande utilisateur)
 - Fichiers CostsTab.jsx / IoTTab.jsx conserves sur disque mais non importes (retour facile si besoin)

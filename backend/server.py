@@ -23,6 +23,7 @@ from navixy_client import NavixyClient
 from cache_manager import TenantCacheManager
 from analytics_engine import AnalyticsEngine
 from ecodriving import compute_driver_ecodriving
+from vehicle_admin import create_vehicle_admin_router
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -722,6 +723,7 @@ async def export_pdf(
 
 # ============ MOUNT ============
 
+api_router.include_router(create_vehicle_admin_router(db, get_tenant_context))
 app.include_router(api_router)
 
 app.add_middleware(
