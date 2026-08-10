@@ -3,6 +3,7 @@ import os
 import uuid
 import bcrypt
 import jwt
+import hashlib
 from datetime import datetime, timezone, timedelta
 from typing import Optional
 from fastapi import APIRouter, Request, Response, HTTPException
@@ -80,10 +81,32 @@ def create_access_token(user: dict) -> str:
     return jwt.encode(payload, _secret(), algorithm=JWT_ALGORITHM)
 
 
-def create_refresh_token(user_id: str) -> str:
-    payload = {"sub": user_id, "type": "refresh",
+def create_refresh_token(user_id: str):
+    jti = str(uuid.uuid4())
+    payload = {"sub": user_id, "type": "refresh", "jti": jti,
                "exp": datetime.now(timezone.utc) + timedelta(days=REFRESH_TTL_DAYS)}
-    return jwt.encode(payload, _secret(), algorithm=JWT_ALGORITHM)
+    return jwt.encode(payload, _secret(), algorithm=JWT_ALGORITHM), jti
+
+
+def _token_hash(token: str) -> str:
+    return hashlib.sha256(token.encode()).hexdigest()
+
+
+async def create_session(db, user_id: str) -> str:
+    """Crée un refresh token adossé à une session serveur (hash stocké, jamais en clair)."""
+    token, jti = create_refresh_token(user_id)
+    await db.sessions.insert_one({
+        "jti": jti, "user_id": user_id, "token_hash": _token_hash(token),
+        "created_at": datetime.now(timezone.utc).isoformat(),
+        "expires_at": datetime.now(timezone.utc) + timedelta(days=REFRESH_TTL_DAYS),
+        "revoked": False,
+    })
+    return token
+
+
+async def audit_event(db, tenant, action: str, by: str, detail: str = None):
+    await db.audit_log.insert_one({"tenant": tenant or "-", "action": action, "by": by,
+                                   "detail": detail, "at": datetime.now(timezone.utc).isoformat()})
 
 
 def _set_cookies(response: Response, access: str, refresh: str):
@@ -126,6 +149,8 @@ def make_require_user(db):
         user = await get_current_user(request, db)
         role = user.get("role")
         if role != "SUPER_ADMIN":
+            if user.get("must_change_password"):
+                raise HTTPException(status_code=403, detail="PASSWORD_CHANGE_REQUIRED")
             if role in ("READ_ONLY", "DRIVER") and request.method not in ("GET", "HEAD", "OPTIONS"):
                 raise HTTPException(status_code=403, detail="Accès en lecture seule")
             tenant = user.get("tenant_id")
@@ -170,12 +195,15 @@ async def _check_lockout(db, identifier: str):
         await db.login_attempts.delete_one({"identifier": identifier})
 
 
-async def _record_failure(db, identifier: str):
+async def _record_failure(db, identifier: str, email: str):
     await db.login_attempts.update_one(
         {"identifier": identifier},
         {"$inc": {"count": 1}, "$set": {"last_attempt": datetime.now(timezone.utc).isoformat()}},
         upsert=True,
     )
+    rec = await db.login_attempts.find_one({"identifier": identifier})
+    if rec and rec.get("count") == MAX_LOGIN_ATTEMPTS:
+        await audit_event(db, "-", "LOGIN_FAILED_LOCKOUT", email, f"Verrou {LOCKOUT_MINUTES} min")
 
 
 # ---------- Seed + migration idempotente ----------
@@ -189,6 +217,9 @@ async def seed_and_migrate(db):
     await db.impersonation_logs.create_index([("tenant", 1), ("started_at", -1)])
     await db.tenant_sync.create_index("tenant", unique=True)
     await db.audit_log.create_index([("tenant", 1), ("at", -1)])
+    await db.sessions.create_index("jti", unique=True)
+    await db.sessions.create_index("user_id")
+    await db.sessions.create_index("expires_at", expireAfterSeconds=0)
 
     await db.flows.update_many({"tenant": {"$exists": False}}, {"$set": {"tenant": "default"}})
 
@@ -229,6 +260,11 @@ class LoginInput(BaseModel):
     password: str
 
 
+class ChangePasswordInput(BaseModel):
+    current_password: str
+    new_password: str
+
+
 def create_auth_router(db) -> APIRouter:
     router = APIRouter(prefix="/api/auth")
 
@@ -241,7 +277,7 @@ def create_auth_router(db) -> APIRouter:
 
         user = await db.users.find_one({"email": email}, {"_id": 0})
         if not user or not verify_password(body.password, user["password_hash"]):
-            await _record_failure(db, identifier)
+            await _record_failure(db, identifier, email)
             raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
         if not user.get("is_active", True):
             raise HTTPException(status_code=403, detail="Compte désactivé")
@@ -253,11 +289,22 @@ def create_auth_router(db) -> APIRouter:
         await db.login_attempts.delete_one({"identifier": identifier})
         await db.users.update_one({"id": user["id"]},
                                   {"$set": {"last_login_at": datetime.now(timezone.utc).isoformat()}})
-        _set_cookies(response, create_access_token(user), create_refresh_token(user["id"]))
+        refresh = await create_session(db, user["id"])
+        _set_cookies(response, create_access_token(user), refresh)
+        await audit_event(db, user.get("tenant_id"), "LOGIN_SUCCESS", email)
         return {"success": True, "user": _sanitize(user)}
 
     @router.post("/logout")
-    async def logout(response: Response):
+    async def logout(request: Request, response: Response):
+        token = request.cookies.get("refresh_token")
+        if token:
+            try:
+                payload = jwt.decode(token, _secret(), algorithms=[JWT_ALGORITHM],
+                                     options={"verify_exp": False})
+                if payload.get("jti"):
+                    await db.sessions.update_one({"jti": payload["jti"]}, {"$set": {"revoked": True}})
+            except jwt.InvalidTokenError:
+                pass
         response.delete_cookie("access_token", path="/")
         response.delete_cookie("refresh_token", path="/")
         return {"success": True}
@@ -276,13 +323,48 @@ def create_auth_router(db) -> APIRouter:
             payload = jwt.decode(token, _secret(), algorithms=[JWT_ALGORITHM])
         except jwt.InvalidTokenError:
             raise HTTPException(status_code=401, detail="Jeton invalide")
-        if payload.get("type") != "refresh":
+        if payload.get("type") != "refresh" or not payload.get("jti"):
             raise HTTPException(status_code=401, detail="Type de jeton invalide")
+
+        sess = await db.sessions.find_one({"jti": payload["jti"]})
+        if not sess or sess["token_hash"] != _token_hash(token):
+            raise HTTPException(status_code=401, detail="Session inconnue")
+        if sess.get("revoked"):
+            # Réutilisation d'un jeton déjà consommé → révocation de toutes les sessions (vol suspecté)
+            await db.sessions.update_many({"user_id": sess["user_id"]}, {"$set": {"revoked": True}})
+            await audit_event(db, "-", "REFRESH_REUSE_DETECTED", sess["user_id"])
+            raise HTTPException(status_code=401, detail="Jeton déjà utilisé — sessions révoquées")
+
         user = await db.users.find_one({"id": payload["sub"]}, {"_id": 0})
         if not user or not user.get("is_active", True):
             raise HTTPException(status_code=401, detail="Utilisateur introuvable ou désactivé")
-        response.set_cookie("access_token", create_access_token(user), httponly=True, secure=True,
-                            samesite="lax", max_age=ACCESS_TTL_MIN * 60, path="/")
+
+        # Rotation : ancien jeton révoqué, nouveau émis
+        await db.sessions.update_one({"jti": payload["jti"]}, {"$set": {
+            "revoked": True, "rotated_at": datetime.now(timezone.utc).isoformat()}})
+        new_refresh = await create_session(db, user["id"])
+        _set_cookies(response, create_access_token(user), new_refresh)
         return {"success": True}
+
+    @router.post("/change-password")
+    async def change_password(body: ChangePasswordInput, request: Request, response: Response):
+        user = await get_current_user(request, db)
+        if not verify_password(body.current_password, user["password_hash"]):
+            raise HTTPException(status_code=401, detail="Mot de passe actuel incorrect")
+        if len(body.new_password) < 8:
+            raise HTTPException(status_code=400, detail="Le nouveau mot de passe doit contenir au moins 8 caractères")
+        if body.new_password == body.current_password:
+            raise HTTPException(status_code=400, detail="Le nouveau mot de passe doit être différent de l'actuel")
+        await db.users.update_one({"id": user["id"]}, {"$set": {
+            "password_hash": hash_password(body.new_password),
+            "must_change_password": False,
+            "password_changed_at": datetime.now(timezone.utc).isoformat()}})
+        # Invalider toutes les sessions existantes puis en émettre une nouvelle
+        await db.sessions.update_many({"user_id": user["id"]}, {"$set": {"revoked": True}})
+        updated = await db.users.find_one({"id": user["id"]}, {"_id": 0})
+        refresh = await create_session(db, user["id"])
+        _set_cookies(response, create_access_token(updated), refresh)
+        await audit_event(db, user.get("tenant_id"), "PASSWORD_CHANGED", user["email"])
+        return {"success": True, "user": _sanitize(updated)}
 
     return router

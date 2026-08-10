@@ -26,6 +26,11 @@ api.interceptors.response.use(
   (r) => r,
   async (error) => {
     const original = error.config;
+    const detail = error.response?.data?.detail;
+    if (error.response?.status === 403 && (detail === "IMPERSONATION_EXPIRED" || detail === "IMPERSONATION_INVALID")) {
+      localStorage.removeItem("logitrak:actAs");
+      window.dispatchEvent(new Event("logitrak:imp-ended"));
+    }
     if (error.response?.status === 401 && original && !original._retry && !original.url?.includes('/auth/')) {
       original._retry = true;
       try {

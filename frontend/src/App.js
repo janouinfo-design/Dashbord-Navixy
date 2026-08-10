@@ -3,6 +3,7 @@ import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import "@/App.css";
 import { DashboardLayout } from "@/components/dashboard/DashboardLayout";
 import { LoginPage } from "@/components/auth/LoginPage";
+import ChangePasswordPage from "@/components/auth/ChangePasswordPage";
 import { AuthProvider, useAuth } from "@/lib/AuthContext";
 import { ImpersonationBanner } from "@/components/shared/ImpersonationBanner";
 import { SuperAdminLayout } from "@/components/superadmin/SuperAdminLayout";
@@ -38,6 +39,7 @@ function DashboardGate() {
 
   if (user === null) return <Spinner />;
   if (user === false) return <LoginPage clientInfo={clientInfo} />;
+  if (user.must_change_password) return <Navigate to="/change-password" replace />;
   if (user.role === "SUPER_ADMIN" && !actAs) return <Navigate to="/super-admin" replace />;
 
   return (
@@ -55,8 +57,17 @@ function RequireSuperAdmin({ children }) {
   const clientInfo = useClientInfo();
   if (user === null) return <Spinner />;
   if (user === false) return <LoginPage clientInfo={clientInfo} />;
+  if (user.must_change_password) return <Navigate to="/change-password" replace />;
   if (user.role !== "SUPER_ADMIN") return <Navigate to="/" replace />;
   return children;
+}
+
+function ChangePasswordGate() {
+  const { user } = useAuth();
+  const clientInfo = useClientInfo();
+  if (user === null) return <Spinner />;
+  if (user === false) return <LoginPage clientInfo={clientInfo} />;
+  return <ChangePasswordPage />;
 }
 
 function App() {
@@ -64,6 +75,7 @@ function App() {
     <BrowserRouter>
       <AuthProvider>
         <Routes>
+          <Route path="/change-password" element={<ChangePasswordGate />} />
           <Route path="/super-admin" element={<RequireSuperAdmin><SuperAdminLayout /></RequireSuperAdmin>}>
             <Route index element={<SuperAdminDashboard />} />
             <Route path="clients" element={<ClientsPage />} />

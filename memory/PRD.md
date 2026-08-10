@@ -197,8 +197,21 @@ Vue generale | Analyse flotte | Conducteurs | Vehicules | Couts | IoT | (Audit v
 
 ## Backlog
 - [ ] **P3 restant**: correlation stricte is_impersonating avec log ouvert (suggestion test agent, non bloquant) ; changement de mot de passe par l'utilisateur (must_change_password est stocke mais non force au login)
-- [ ] **P4 Durcissement**: rotation refresh tokens ; revue finale securite
+- [ ] **P4 Durcissement**: revue finale securite
 - [ ] Alertes email echeances (explicitement hors perimetre Phase 2)
+- [x] **Phase 2.1 Durcissement auth & impersonation** (2026-06, iteration_17 — 20/20 backend + frontend 100%):
+  - Changement mdp obligatoire: must_change_password → 403 PASSWORD_CHANGE_REQUIRED partout sauf /api/auth/* ; page /change-password (redirect force, contournement URL impossible) ; POST /api/auth/change-password (verif mdp actuel, min 8, bcrypt, invalidation sessions, nouvelles cookies)
+  - Rotation refresh tokens: collection sessions (jti, sha256 hash — jamais en clair, TTL index) ; chaque refresh consomme l'ancien et emet un nouveau ; reutilisation → revocation globale + audit REFRESH_REUSE_DETECTED ; logout revoque
+  - Impersonation stricte: header X-Act-As-Tenant exige session impersonation_logs OUVERTE du super admin pour CE tenant (403 IMPERSONATION_INVALID sinon) ; 1 seule session ouverte par super admin ; expiration 60 min (IMPERSONATION_EXPIRED, log expired=true) ; frontend auto-nettoie sur 403 (interceptor)
+  - Audit: LOGIN_SUCCESS, LOGIN_FAILED_LOCKOUT, PASSWORD_CHANGED, PASSWORD_RESET_BY_ADMIN, USER_DISABLED, USER_REACTIVATED, IMPERSONATION_STARTED/ENDED/EXPIRED, REFRESH_REUSE_DETECTED — aucun secret stocke (teste)
+  - Comptes TEST passes par le flux change-password reel — nouveaux mdp dans test_credentials.md
+  - Fichiers: backend/{auth.py,server.py,super_admin.py}, frontend/{components/auth/ChangePasswordPage.jsx(nouveau),App.js,lib/api.js,lib/AuthContext.jsx}
+  - Tests: /app/backend/tests/test_auth_phase2_1.py (20 tests)
+
+## Ordre valide par utilisateur pour la suite
+1. Carte temps reel (module 'carte' a ajouter au registre MODULES)
+2. Alertes echeances email
+3. Logo/branding par client
 - [ ] Integration Baubit (P2)
 - [ ] Responsive mobile/tablette complet (P2)
 - [ ] Auto-refresh (P2)

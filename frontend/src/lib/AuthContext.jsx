@@ -52,8 +52,16 @@ export const AuthProvider = ({ children }) => {
     }
   }, []);
 
+  useEffect(() => {
+    const onImpEnded = () => setActAs(null);
+    window.addEventListener("logitrak:imp-ended", onImpEnded);
+    return () => window.removeEventListener("logitrak:imp-ended", onImpEnded);
+  }, []);
+
+  const applyUser = useCallback((u) => setUser(u), []);
+
   return (
-    <AuthContext.Provider value={{ user, login, logout, actAs, startImpersonation, endImpersonation }}>
+    <AuthContext.Provider value={{ user, login, logout, actAs, startImpersonation, endImpersonation, applyUser }}>
       {children}
     </AuthContext.Provider>
   );

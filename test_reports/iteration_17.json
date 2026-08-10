@@ -1,0 +1,41 @@
+{
+  "summary": "Phase 2.1 (durcissement auth + impersonation) validée. Backend: 20/20 pytest passing (test_auth_phase2_1.py). Couvre : must_change_password full flow (create user via SUPER_ADMIN, login OK avec must_change=true, /api/flows -> 403 PASSWORD_CHANGE_REQUIRED, change-password wrong current=401/short=400/same=400/valid=200, /api/flows re-accessible, ancien temp pw = 401, nouveau pw = 200), refresh rotation + reuse detection (R1 -> R2 nouveau cookie != R1, replay R1 = 401, R2 aussi 401 après révocation globale, re-login OK), sessions Mongo stockent uniquement token_hash sha256 64 hex (jamais de token en clair ni refresh_token en clair), logout révoque le refresh, impersonation stricte (header sans session ouverte = 403 IMPERSONATION_INVALID, start puis header ok, cross-tenant même après start ouvert = 403, après end = 403, MANAGER beta avec header test-alpha ignoré retourne tenant=test-beta 200), expiration 60 min (started_at vieilli à -61 min -> 403 IMPERSONATION_EXPIRED, log clos avec expired=true, audit IMPERSONATION_EXPIRED), audit_log contient LOGIN_SUCCESS/PASSWORD_CHANGED/IMPERSONATION_STARTED/ENDED/EXPIRED et aucune fuite de bcrypt/jwt/mot_de_passe/hash_navixy. Frontend Playwright: (1) login temp -> auto redirect /change-password data-testid change-password-page, (2) direct nav '/' rebondi vers /change-password, (3) confirm mismatch -> cp-error 'La confirmation ne correspond pas', (4) submit valide -> dashboard client app-container, (5) SUPER_ADMIN /super-admin/clients -> sa-client-open-test-beta -> sa-detail-apercu-btn -> impersonation-banner visible -> impersonation-exit-btn retour /super-admin banner disparu, (6) injection localStorage logitrak:actAs {tenant:test-beta,logId:fake} + nav '/' -> requêtes 403 IMPERSONATION_INVALID -> interceptor api.js nettoie localStorage.actAs = null et SUPER_ADMIN sans actAs redirigé vers /super-admin. Utilisateur test créé + désactivé à la fin, impersonation_logs ouverts fermés.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "seed users", "issue": "admin@test-alpha.local, admin@test-beta.local et ro@test-alpha.local ont must_change_password=true en base — un ADMIN alpha/beta qui se connecte avec le mot de passe listé dans test_credentials.md sera redirigé vers /change-password et /api/flows renverra 403 PASSWORD_CHANGE_REQUIRED. Comportement volontaire selon la spec Phase 2.1, mais impacte la régression telle que décrite dans la review (isolation flows alpha/beta) : il faudra soit changer effectivement leurs mdp (perte des mdp du fichier test_credentials.md) soit utiliser MANAGER beta mgr21 (déjà changé, must_change=false) pour toute vérif /api. À trancher côté produit."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_auth_phase2_1.py",
+    "/app/test_reports/pytest/phase2_1_results.xml"
+  ],
+  "action_items": [
+    "Décider du sort des ADMIN alpha/beta seedés avec must_change_password=true : soit régénérer un temp password et mettre à jour /app/memory/test_credentials.md, soit passer must_change=false pour ces comptes de test, sinon la régression 'isolation flows alpha/beta' documentée en review nécessite un changement de mdp manuel avant chaque campagne (test_super_admin_phase2.py::TestFlowIsolation utilise ces comptes)."
+  ],
+  "critical_code_review_comments": [
+    "auth.py L349 change-password: bien invalide toutes les sessions existantes avant d'en émettre une nouvelle — cohérent avec la rotation. OK.",
+    "auth.py L332 sur réutilisation d'un jeton révoqué : révocation globale user + audit REFRESH_REUSE_DETECTED — implémentation conforme OAuth2 refresh token rotation best-practice.",
+    "server.py L90 _validate_impersonation : parse started_at via datetime.fromisoformat — OK tant que _now() insère bien un ISO tz-aware. Vérifié via test d'expiration (fromisoformat accepte le +00:00).",
+    "api.js interceptor 403 IMPERSONATION_* : nettoie localStorage + dispatch imp-ended — vérifié que la nav suivante renvoie SUPER_ADMIN vers /super-admin (App.js DashboardGate : SUPER_ADMIN && !actAs -> /super-admin). OK.",
+    "Aucune donnée sensible (bcrypt, JWT, refresh, navixy) trouvée dans audit_log (test explicite test_no_secret_leak). OK."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_auth_phase2_1.py"
+  ],
+  "success_rate": {
+    "backend": "100% (20/20 pytest test_auth_phase2_1.py)",
+    "frontend": "100% (change-password redirect + gate + error + submit ; SUPER_ADMIN impersonation banner + exit ; interceptor auto-cleanup sur 403 IMPERSONATION_INVALID)"
+  },
+  "seed_data_creation": "Un utilisateur MANAGER test créé via /api/admin/clients/{beta}/users (email TEST_uifp*@test-beta.local) puis désactivé (is_active=false) après le flux frontend. Un log d'impersonation créé/fermé pour test-beta. Tous les impersonation_logs ouverts en fin de tests sont fermés (ended_at fixé). Aucun tenant modifié.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": false,
+  "test_credentials": "SUPER_ADMIN admin@logitrak.ch / LT!u4qv8ibtN21iOHDz ; MANAGER beta (must_change=false) mgr21@test-beta.local / MonNouveauMdp21! — voir /app/memory/test_credentials.md",
+  "context_for_next_testing_agent": "Phase 2.1 backend + frontend validée. Fichier de régression : /app/backend/tests/test_auth_phase2_1.py (20 tests, ~15s). ATTENTION IMPORTANT : les ADMIN alpha/beta seedés ont must_change_password=true actuellement — pour tester /api en régression il faut utiliser mgr21@test-beta.local (must_change=false). test_super_admin_phase2.py::TestFlowIsolation risque donc de casser sans changement de mdp préalable. Pour tester le refresh rotation, NE PAS utiliser SUPER_ADMIN (une réutilisation détectée révoquerait toutes ses sessions) — utiliser un compte de test dédié ou un compte réel type mgr21. Frontend selectors clés confirmés : change-password-page, cp-current-input, cp-new-input, cp-confirm-input, cp-submit-btn, cp-error, impersonation-banner, impersonation-exit-btn, sa-client-open-<tenant>, sa-detail-apercu-btn, app-container. Interceptor api.js sur 403 IMPERSONATION_EXPIRED|INVALID nettoie localStorage.logitrak:actAs et dispatch event 'logitrak:imp-ended' — DashboardGate renvoie ensuite SUPER_ADMIN vers /super-admin.",
+  "rca_of_the_issue": "N/A — pas de bug bloquant. Point d'attention : seed migration Phase 2.1 laisse must_change_password=true sur les ADMIN seedés qui utilisaient leur mdp initial ; à réconcilier avec /app/memory/test_credentials.md ou à considérer comme état volontaire (renforce la sécurité — chaque compte doit passer par change-password au moins une fois)."
+}

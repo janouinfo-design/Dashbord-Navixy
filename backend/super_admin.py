@@ -316,8 +316,14 @@ def create_super_admin_router(db, navixy, cache) -> APIRouter:
         if not data:
             raise HTTPException(status_code=400, detail="Aucune donnée à modifier")
         await db.users.update_one({"id": user_id}, {"$set": data})
-        await _audit(target.get("tenant_id") or "-", "user_updated",
-                     request.state.user["email"], f"{target['email']} → {data}")
+        by = request.state.user["email"]
+        tenant = target.get("tenant_id") or "-"
+        if body.is_active is False:
+            await _audit(tenant, "USER_DISABLED", by, target["email"])
+        elif body.is_active is True:
+            await _audit(tenant, "USER_REACTIVATED", by, target["email"])
+        if body.role is not None:
+            await _audit(tenant, "user_role_updated", by, f"{target['email']} → {body.role}")
         return {"success": True}
 
     @router.post("/users/{user_id}/reset-password")
@@ -330,7 +336,7 @@ def create_super_admin_router(db, navixy, cache) -> APIRouter:
         temp_password = _temp_password()
         await db.users.update_one({"id": user_id}, {"$set": {
             "password_hash": hash_password(temp_password), "must_change_password": True}})
-        await _audit(target.get("tenant_id") or "-", "user_password_reset",
+        await _audit(target.get("tenant_id") or "-", "PASSWORD_RESET_BY_ADMIN",
                      request.state.user["email"], target["email"])
         return {"success": True, "temp_password": temp_password}
 
@@ -385,18 +391,26 @@ def create_super_admin_router(db, navixy, cache) -> APIRouter:
             raise HTTPException(status_code=404, detail="Tenant introuvable ou suspendu")
         ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or \
             (request.client.host if request.client else None)
+        # Une seule session d'aperçu ouverte à la fois par super admin
+        await db.impersonation_logs.update_many(
+            {"super_admin_id": request.state.user["id"], "ended_at": None},
+            {"$set": {"ended_at": _now()}})
         log = {"id": str(uuid.uuid4()), "super_admin_id": request.state.user["id"],
                "email": request.state.user["email"], "tenant": t, "ip": ip,
                "started_at": _now(), "ended_at": None}
         await db.impersonation_logs.insert_one(log)
+        await _audit(t, "IMPERSONATION_STARTED", request.state.user["email"], f"IP {ip}")
         return {"success": True, "log_id": log["id"],
                 "client": client or {"name": "Default", "tenant": "default"}}
 
     @router.post("/impersonation/end")
     async def impersonation_end(body: ImpersonationEnd, request: Request):
-        await db.impersonation_logs.update_one(
-            {"id": body.log_id, "super_admin_id": request.state.user["id"]},
+        r = await db.impersonation_logs.update_one(
+            {"id": body.log_id, "super_admin_id": request.state.user["id"], "ended_at": None},
             {"$set": {"ended_at": _now()}})
+        if r.modified_count:
+            log = await db.impersonation_logs.find_one({"id": body.log_id}, {"_id": 0})
+            await _audit(log["tenant"], "IMPERSONATION_ENDED", request.state.user["email"])
         return {"success": True}
 
     # ---------- Purge (tenants de test / procédure propre) ----------

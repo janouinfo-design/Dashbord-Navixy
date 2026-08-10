@@ -18,7 +18,7 @@ import asyncio
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional, Dict, Any
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 from navixy_client import NavixyClient
 from cache_manager import TenantCacheManager
@@ -84,6 +84,26 @@ async def _resolve_tenant(tenant: str):
     raise HTTPException(status_code=403, detail="Tenant inconnu ou suspendu")
 
 
+IMPERSONATION_TTL_MIN = 60
+
+
+async def _validate_impersonation(user: dict, tenant: str):
+    """Le header seul ne suffit pas : une session d'aperçu ouverte et non expirée est requise."""
+    sess = await db.impersonation_logs.find_one(
+        {"super_admin_id": user["id"], "tenant": tenant, "ended_at": None},
+        sort=[("started_at", -1)])
+    if not sess:
+        raise HTTPException(status_code=403, detail="IMPERSONATION_INVALID")
+    started = datetime.fromisoformat(sess["started_at"])
+    if datetime.now(timezone.utc) - started > timedelta(minutes=IMPERSONATION_TTL_MIN):
+        now = datetime.now(timezone.utc).isoformat()
+        await db.impersonation_logs.update_one(
+            {"id": sess["id"]}, {"$set": {"ended_at": now, "expired": True}})
+        await db.audit_log.insert_one({"tenant": tenant, "action": "IMPERSONATION_EXPIRED",
+                                       "by": user["email"], "detail": None, "at": now})
+        raise HTTPException(status_code=403, detail="IMPERSONATION_EXPIRED")
+
+
 async def get_tenant_context(request: Request):
     """Returns (navixy_hash, tenant_name). Tenant = identité du token, jamais le frontend."""
     user = getattr(request.state, 'user', None)
@@ -94,7 +114,9 @@ async def get_tenant_context(request: Request):
     if user.get('role') == 'SUPER_ADMIN':
         act_as = request.headers.get('X-Act-As-Tenant')
         if act_as:
-            return await _resolve_tenant(act_as.strip().lower())
+            act_as = act_as.strip().lower()
+            await _validate_impersonation(user, act_as)
+            return await _resolve_tenant(act_as)
         if sub_client:
             return decrypt_hash(sub_client['navixy_hash']), sub_client.get('tenant') or sub_client['subdomain']
         return await _resolve_tenant('default')
