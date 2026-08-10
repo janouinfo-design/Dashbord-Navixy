@@ -172,8 +172,24 @@ Vue generale | Analyse flotte | Conducteurs | Vehicules | Couts | IoT | (Audit v
   - Tests: 100% backend (invariants 1/7/31 jours) + 100% frontend (iteration_9)
   - Regression: tous onglets fonctionnels, pas de tabs fantomes
 - [x] **Refonte Conducteurs / Eco-conduite** (iter 10): score natif Navixy plugin 46, attribution stricte, drawer explicatif, 100% teste
+- [x] **Audit multi-tenant Phase 1** (2026-06): rapport complet /app/memory/AUDIT_MULTITENANT.md, valide par utilisateur
+- [x] **Phase 1 securite multi-tenant** (2026-06, iteration_15 — 23/23 backend + frontend 100%):
+  - Auth JWT (cookies httpOnly access 8h + refresh 7j, fallback Bearer), bcrypt, /api/auth/{login,logout,me,refresh}
+  - TOUS les endpoints /api/* verrouilles (sauf /api/, /api/client/info publics — branding login)
+  - Fuites corrigees: /admin/clients SUPER_ADMIN only + navixy_hash jamais renvoye; flows filtres par tenant; debug/cache-stats + audit/compare SUPER_ADMIN
+  - navixy_hash chiffre au repos (Fernet, prefixe enc:, cle ENCRYPTION_KEY .env)
+  - Sous-domaines *.logitrak.ch inconnus → 403; tenant = identite du token (jamais le frontend); SUPER_ADMIN: X-Act-As-Tenant valide + journalise (impersonation_logs)
+  - Brute force: 5 echecs → 429 verrou 15 min; index Mongo (users.email unique, clients.subdomain unique, flows.tenant)
+  - Seed SUPER_ADMIN idempotent depuis .env (SUPER_ADMIN_EMAIL/PASSWORD) — identifiants dans /app/memory/test_credentials.md
+  - Frontend: LoginPage, AuthContext, interceptor 401→refresh, logout header, onglet Audit reserve SUPER_ADMIN (plus de ?admin=true)
+  - Fichiers: backend/auth.py (nouveau), server.py, frontend/src/lib/{api.js,AuthContext.jsx}, components/auth/LoginPage.jsx, App.js, Header.jsx, DashboardLayout.jsx
+  - Tests regression: /app/backend/tests/test_auth_phase1.py
 
 ## Backlog
+- [ ] **P2 Super Admin** (valide utilisateur): /super-admin dashboard KPI, gestion clients (table, recherche, suspension), wizard 3 etapes avec test connexion Navixy reel
+- [ ] **P3 Modules + Impersonation**: activation modules par tenant (API + menu), mode apercu client audite
+- [ ] **P4 Durcissement**: tests IDOR croises automatises (tenant A vs B), roles READ_ONLY/DRIVER effectifs sur ecritures, revue finale
+- [ ] Rotation refresh tokens (suggestion testing agent, non bloquant)
 - [ ] Integration Baubit (P2)
 - [ ] Responsive mobile/tablette complet (P2)
 - [ ] Auto-refresh (P2)

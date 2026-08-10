@@ -1,10 +1,12 @@
 import { useState, useEffect } from "react";
 import {
-  Menu, RefreshCw, Bell, Clock, Code, FileText
+  Menu, RefreshCw, Bell, Clock, Code, FileText, LogOut
 } from "lucide-react";
+import { useAuth } from "@/lib/AuthContext";
 
 export const Header = ({ title, subtitle, onRefresh, lastUpdate, alertCount = 0, children, debugMode, onDebugToggle, onExportPDF }) => {
   const [timeAgo, setTimeAgo] = useState('');
+  const { user, logout } = useAuth();
 
   useEffect(() => {
     if (!lastUpdate) return;
@@ -83,6 +85,22 @@ export const Header = ({ title, subtitle, onRefresh, lastUpdate, alertCount = 0,
             <RefreshCw size={14} />
             <span className="hidden sm:inline">Actualiser</span>
           </button>
+        )}
+
+        {user && (
+          <div className="flex items-center gap-1.5 pl-2 border-l border-gray-200 ml-1">
+            <span className="hidden lg:block text-xs text-gray-500 max-w-[160px] truncate" data-testid="header-user-email" title={`${user.email} (${user.role})`}>
+              {user.email}
+            </span>
+            <button
+              onClick={logout}
+              className="p-2 hover:bg-red-50 hover:text-red-600 rounded-lg transition-colors text-gray-400"
+              data-testid="logout-btn"
+              title="Se déconnecter"
+            >
+              <LogOut size={16} />
+            </button>
+          </div>
         )}
       </div>
     </header>

@@ -2,7 +2,7 @@
 LOGITRAK Fleet Dashboard — Multi-Client API
 Slim route layer. All computation is delegated to AnalyticsEngine.
 """
-from fastapi import FastAPI, APIRouter, HTTPException, Query, Request
+from fastapi import FastAPI, APIRouter, HTTPException, Query, Request, Depends
 from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -25,6 +25,10 @@ from cache_manager import TenantCacheManager
 from analytics_engine import AnalyticsEngine
 from ecodriving import compute_driver_ecodriving
 from vehicle_admin import create_vehicle_admin_router
+from auth import (
+    make_require_user, require_role, create_auth_router,
+    seed_and_migrate, encrypt_hash, decrypt_hash,
+)
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -45,7 +49,10 @@ cache = TenantCacheManager(ttl=300)
 engine = AnalyticsEngine(navixy, cache, db)
 
 app = FastAPI(title="LOGITRAK Fleet Dashboard - Multi-Client")
-api_router = APIRouter(prefix="/api")
+require_user = make_require_user(db)
+api_router = APIRouter(prefix="/api", dependencies=[Depends(require_user)])
+public_router = APIRouter(prefix="/api")
+auth_router = create_auth_router(db)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
@@ -59,16 +66,51 @@ async def get_client_from_subdomain(request: Request) -> Optional[dict]:
         subdomain = match.group(1).lower()
         if subdomain in ('www', 'admin', 'api'):
             return None
-        return await db.clients.find_one({"subdomain": subdomain, "is_active": True}, {"_id": 0})
+        client = await db.clients.find_one({"subdomain": subdomain, "is_active": True}, {"_id": 0})
+        if not client:
+            raise HTTPException(status_code=403, detail="Domaine inconnu ou tenant suspendu")
+        return client
     return None
 
 
+async def _resolve_tenant(tenant: str):
+    """Returns (navixy_hash, tenant_name) for a validated tenant identifier."""
+    if tenant == 'default':
+        return DEFAULT_NAVIXY_HASH, 'default'
+    client = await db.clients.find_one({"subdomain": tenant, "is_active": True}, {"_id": 0})
+    if not client or not client.get('navixy_hash'):
+        raise HTTPException(status_code=403, detail="Tenant inconnu ou suspendu")
+    return decrypt_hash(client['navixy_hash']), tenant
+
+
 async def get_tenant_context(request: Request):
-    """Returns (navixy_hash, tenant_name)."""
-    info = await get_client_from_subdomain(request)
-    if info and info.get('navixy_hash'):
-        return info['navixy_hash'], info.get('subdomain', 'default')
-    return DEFAULT_NAVIXY_HASH, 'default'
+    """Returns (navixy_hash, tenant_name). Tenant = identité du token, jamais le frontend."""
+    user = getattr(request.state, 'user', None)
+    if user is None:
+        raise HTTPException(status_code=401, detail="Non authentifié")
+    sub_client = await get_client_from_subdomain(request)
+
+    if user.get('role') == 'SUPER_ADMIN':
+        act_as = request.headers.get('X-Act-As-Tenant')
+        if act_as:
+            act_as = act_as.strip().lower()
+            h, t = await _resolve_tenant(act_as)
+            await db.impersonation_logs.insert_one({
+                "super_admin_id": user['id'], "email": user['email'], "tenant": t,
+                "path": str(request.url.path),
+                "started_at": datetime.now(timezone.utc).isoformat(),
+            })
+            return h, t
+        if sub_client:
+            return decrypt_hash(sub_client['navixy_hash']), sub_client['subdomain']
+        return DEFAULT_NAVIXY_HASH, 'default'
+
+    tenant = user.get('tenant_id')
+    if not tenant:
+        raise HTTPException(status_code=403, detail="Aucun tenant associé à ce compte")
+    if sub_client and sub_client['subdomain'] != tenant:
+        raise HTTPException(status_code=403, detail="Tenant non autorisé sur ce domaine")
+    return await _resolve_tenant(tenant)
 
 # ============ MODELS ============
 
@@ -131,7 +173,7 @@ class FuelConfigUpdate(BaseModel):
 
 # ============ BASIC ============
 
-@api_router.get("/")
+@public_router.get("/")
 async def root():
     return {"message": "LOGITRAK Fleet Dashboard API - Multi-Client", "engine_version": "1.0.0"}
 
@@ -153,57 +195,62 @@ async def get_status_checks():
 
 # ============ CLIENT INFO ============
 
-@api_router.get("/client/info")
+@public_router.get("/client/info")
 async def get_client_info(request: Request):
     info = await get_client_from_subdomain(request)
     if info:
-        safe = {k: v for k, v in info.items() if k != 'navixy_hash'}
+        safe = {k: info.get(k) for k in ('name', 'subdomain', 'logo_url', 'primary_color')}
         return {"success": True, "client": safe, "is_multi_tenant": True}
     return {"success": True, "client": {"name": "Default", "primary_color": "#e53935"}, "is_multi_tenant": False}
 
-# ============ ADMIN — CLIENTS CRUD ============
+# ============ ADMIN — CLIENTS CRUD (SUPER_ADMIN uniquement, hash jamais exposé) ============
+
+def _mask_client(c: dict) -> dict:
+    return {k: v for k, v in c.items() if k != 'navixy_hash'}
 
 @api_router.get("/admin/clients")
-async def list_clients():
+async def list_clients(user: dict = Depends(require_role("SUPER_ADMIN"))):
     clients = await db.clients.find({}, {"_id": 0}).to_list(1000)
-    return {"success": True, "clients": clients}
+    return {"success": True, "clients": [_mask_client(c) for c in clients]}
 
 @api_router.post("/admin/clients")
-async def create_client(client_input: ClientCreate):
+async def create_client(client_input: ClientCreate, user: dict = Depends(require_role("SUPER_ADMIN"))):
     existing = await db.clients.find_one({"subdomain": client_input.subdomain.lower()})
     if existing:
         raise HTTPException(status_code=400, detail="Subdomain already exists")
     obj = Client(
         name=client_input.name, subdomain=client_input.subdomain.lower(),
-        navixy_hash=client_input.navixy_hash, logo_url=client_input.logo_url,
+        navixy_hash=encrypt_hash(client_input.navixy_hash), logo_url=client_input.logo_url,
         primary_color=client_input.primary_color or "#e53935",
         contact_email=client_input.contact_email,
     )
     doc = obj.model_dump()
     doc['created_at'] = doc['created_at'].isoformat()
     await db.clients.insert_one(doc)
-    return {"success": True, "client": obj.model_dump(),
+    return {"success": True, "client": _mask_client(obj.model_dump()),
             "dashboard_url": f"https://{obj.subdomain}.{BASE_DOMAIN}"}
 
 @api_router.get("/admin/clients/{client_id}")
-async def get_client(client_id: str):
+async def get_client(client_id: str, user: dict = Depends(require_role("SUPER_ADMIN"))):
     doc = await db.clients.find_one({"id": client_id}, {"_id": 0})
     if not doc:
         raise HTTPException(status_code=404, detail="Client not found")
-    return {"success": True, "client": doc}
+    return {"success": True, "client": _mask_client(doc)}
 
 @api_router.put("/admin/clients/{client_id}")
-async def update_client(client_id: str, client_input: ClientUpdate):
+async def update_client(client_id: str, client_input: ClientUpdate, user: dict = Depends(require_role("SUPER_ADMIN"))):
     data = {k: v for k, v in client_input.model_dump().items() if v is not None}
     if not data:
         raise HTTPException(status_code=400, detail="No data to update")
+    if 'navixy_hash' in data:
+        data['navixy_hash'] = encrypt_hash(data['navixy_hash'])
     r = await db.clients.update_one({"id": client_id}, {"$set": data})
     if r.matched_count == 0:
         raise HTTPException(status_code=404, detail="Client not found")
     return {"success": True, "message": "Client updated"}
 
 @api_router.delete("/admin/clients/{client_id}")
-async def delete_client(client_id: str):
+async def delete_client(client_id: str, user: dict = Depends(require_role("SUPER_ADMIN"))):
     r = await db.clients.delete_one({"id": client_id})
     if r.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Client not found")
@@ -354,8 +401,9 @@ async def get_drivers_ecodriving(
 # ============ IOT FLOWS ============
 
 @api_router.get("/flows")
-async def get_flows():
-    flows = await db.flows.find({}, {"_id": 0}).to_list(100)
+async def get_flows(request: Request):
+    _, tenant = await get_tenant_context(request)
+    flows = await db.flows.find({"tenant": tenant}, {"_id": 0}).to_list(100)
     for f in flows:
         for k in ('created_at', 'updated_at'):
             if isinstance(f.get(k), str):
@@ -363,34 +411,39 @@ async def get_flows():
     return {"success": True, "flows": flows}
 
 @api_router.post("/flows")
-async def create_flow(flow_input: FlowCreate):
+async def create_flow(flow_input: FlowCreate, request: Request):
+    _, tenant = await get_tenant_context(request)
     flow = Flow(name=flow_input.name, nodes=flow_input.nodes, connections=flow_input.connections)
     doc = flow.model_dump()
+    doc['tenant'] = tenant
     doc['created_at'] = doc['created_at'].isoformat()
     doc['updated_at'] = doc['updated_at'].isoformat()
     await db.flows.insert_one(doc)
     return {"success": True, "flow": flow.model_dump()}
 
 @api_router.put("/flows/{flow_id}")
-async def update_flow(flow_id: str, flow_input: FlowCreate):
+async def update_flow(flow_id: str, flow_input: FlowCreate, request: Request):
+    _, tenant = await get_tenant_context(request)
     data = {"name": flow_input.name, "nodes": flow_input.nodes,
             "connections": flow_input.connections,
             "updated_at": datetime.now(timezone.utc).isoformat()}
-    r = await db.flows.update_one({"id": flow_id}, {"$set": data})
+    r = await db.flows.update_one({"id": flow_id, "tenant": tenant}, {"$set": data})
     if r.matched_count == 0:
         raise HTTPException(status_code=404, detail="Flow not found")
     return {"success": True, "message": "Flow updated"}
 
 @api_router.delete("/flows/{flow_id}")
-async def delete_flow(flow_id: str):
-    r = await db.flows.delete_one({"id": flow_id})
+async def delete_flow(flow_id: str, request: Request):
+    _, tenant = await get_tenant_context(request)
+    r = await db.flows.delete_one({"id": flow_id, "tenant": tenant})
     if r.deleted_count == 0:
         raise HTTPException(status_code=404, detail="Flow not found")
     return {"success": True, "message": "Flow deleted"}
 
 @api_router.get("/flows/{flow_id}/export")
-async def export_flow(flow_id: str):
-    flow = await db.flows.find_one({"id": flow_id}, {"_id": 0})
+async def export_flow(flow_id: str, request: Request):
+    _, tenant = await get_tenant_context(request)
+    flow = await db.flows.find_one({"id": flow_id, "tenant": tenant}, {"_id": 0})
     if not flow:
         raise HTTPException(status_code=404, detail="Flow not found")
     return StreamingResponse(
@@ -510,7 +563,7 @@ async def get_tracker_position(tracker_id: int, request: Request):
 # ============ CACHE / DEBUG ============
 
 @api_router.get("/debug/cache-stats")
-async def cache_stats():
+async def cache_stats(user: dict = Depends(require_role("SUPER_ADMIN"))):
     return {"success": True, "cache": cache.stats()}
 
 # ============ AUDIT COMPARE ============
@@ -520,6 +573,7 @@ async def audit_compare(
     request: Request,
     from_date: str = Query(..., description="YYYY-MM-DD"),
     to_date: str = Query(..., description="YYYY-MM-DD"),
+    user: dict = Depends(require_role("SUPER_ADMIN")),
 ):
     """Compare engine-computed values vs raw LOGITRAK for each vehicle."""
     h, tenant = await get_tenant_context(request)
@@ -860,7 +914,14 @@ async def export_pdf(
 # ============ MOUNT ============
 
 api_router.include_router(create_vehicle_admin_router(db, navixy, get_tenant_context, NAVIXY_API_URL))
+app.include_router(auth_router)
+app.include_router(public_router)
 app.include_router(api_router)
+
+@app.on_event("startup")
+async def startup_seed():
+    await seed_and_migrate(db)
+    logger.info("Auth seed + migration multi-tenant OK")
 
 app.add_middleware(
     CORSMiddleware,

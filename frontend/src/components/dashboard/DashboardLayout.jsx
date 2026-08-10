@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { API, api } from "@/lib/api";
+import { useAuth } from "@/lib/AuthContext";
 import { Header } from "@/components/layout/Header";
 import { PeriodSelector } from "@/components/shared/PeriodSelector";
 import {
@@ -33,11 +34,8 @@ export const DashboardLayout = () => {
   const [fromDate, setFromDate] = useState(initFrom);
   const [toDate, setToDate] = useState(() => fmt(new Date()));
   const [debugMode, setDebugMode] = useState(false);
-  const [isAdmin, setIsAdmin] = useState(false);
-
-  useEffect(() => {
-    if (new URLSearchParams(window.location.search).get('admin') === 'true') setIsAdmin(true);
-  }, []);
+  const { user } = useAuth();
+  const isAdmin = user?.role === "SUPER_ADMIN";
 
   const visibleTabs = isAdmin ? [...TABS, ADMIN_TAB] : TABS;
 
