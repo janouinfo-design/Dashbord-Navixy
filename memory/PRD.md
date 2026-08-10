@@ -184,12 +184,21 @@ Vue generale | Analyse flotte | Conducteurs | Vehicules | Couts | IoT | (Audit v
   - Frontend: LoginPage, AuthContext, interceptor 401→refresh, logout header, onglet Audit reserve SUPER_ADMIN (plus de ?admin=true)
   - Fichiers: backend/auth.py (nouveau), server.py, frontend/src/lib/{api.js,AuthContext.jsx}, components/auth/LoginPage.jsx, App.js, Header.jsx, DashboardLayout.jsx
   - Tests regression: /app/backend/tests/test_auth_phase1.py
+- [x] **Phase 2 Super Admin** (2026-06, iteration_16 — 29/29 backend + frontend 100%):
+  - Routes frontend: /super-admin (dashboard KPI reels), /super-admin/clients (table/recherche/filtres/tri/pagination/actions), /super-admin/clients/:id (fiche: Vue generale/Utilisateurs/Navixy/Modules/Activite) — react-router 7
+  - Wizard 5 etapes: Entreprise (slug auto modifiable) → Admin (mdp temporaire affiche 1x) → Navixy (test connexion backend reel) → Modules (6 reels) → Validation ; creation atomique POST /api/admin/clients/full avec rollback
+  - Backend super_admin.py: /api/admin/{overview,modules,navixy/test,clients/full,clients/{id}/detail|activity|users|suspend|reactivate|modules|purge,users/{uid},users/{uid}/reset-password,impersonation/start|end}
+  - Impersonation: header X-Act-As-Tenant (SUPER_ADMIN only, ignore sinon), bandeau orange constant, journal impersonation_logs (super_admin_id, tenant, ip, started/ended_at)
+  - RBAC durci: READ_ONLY/DRIVER → 403 sur ecritures ; client suspendu → 403 login + requetes ; modules non actives → 403 endpoints (conducteurs/vehicules/carburant/rapports) + onglets caches ; SUPER_ADMIN jamais attribuable cote client (400)
+  - Migration: clients.tenant (Hermus=default, hash conserve), clients.modules, tenant_sync, audit_log ; index tenant_sync.tenant unique, audit_log(tenant,at)
+  - 2 tenants TEST conserves (test-alpha modules partiels, test-beta complet, hash factices → Navixy 'En erreur' = etat reel) — purgeables via fiche client
+  - Fichiers: backend/{super_admin.py(nouveau),auth.py,server.py}, frontend/src/components/superadmin/* (7 fichiers), shared/ImpersonationBanner.jsx, App.js, AuthContext.jsx, api.js, DashboardLayout.jsx
+  - Tests: /app/backend/tests/test_super_admin_phase2.py (regression reutilisable)
 
 ## Backlog
-- [ ] **P2 Super Admin** (valide utilisateur): /super-admin dashboard KPI, gestion clients (table, recherche, suspension), wizard 3 etapes avec test connexion Navixy reel
-- [ ] **P3 Modules + Impersonation**: activation modules par tenant (API + menu), mode apercu client audite
-- [ ] **P4 Durcissement**: tests IDOR croises automatises (tenant A vs B), roles READ_ONLY/DRIVER effectifs sur ecritures, revue finale
-- [ ] Rotation refresh tokens (suggestion testing agent, non bloquant)
+- [ ] **P3 restant**: correlation stricte is_impersonating avec log ouvert (suggestion test agent, non bloquant) ; changement de mot de passe par l'utilisateur (must_change_password est stocke mais non force au login)
+- [ ] **P4 Durcissement**: rotation refresh tokens ; revue finale securite
+- [ ] Alertes email echeances (explicitement hors perimetre Phase 2)
 - [ ] Integration Baubit (P2)
 - [ ] Responsive mobile/tablette complet (P2)
 - [ ] Auto-refresh (P2)

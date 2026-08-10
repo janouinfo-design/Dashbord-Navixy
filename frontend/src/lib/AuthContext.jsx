@@ -4,8 +4,14 @@ import { API, api } from "@/lib/api";
 const AuthContext = createContext(null);
 export const useAuth = () => useContext(AuthContext);
 
+const readActAs = () => {
+  try { return JSON.parse(localStorage.getItem("logitrak:actAs")) || null; }
+  catch { return null; }
+};
+
 export const AuthProvider = ({ children }) => {
   const [user, setUser] = useState(null); // null=vérification, false=anonyme, objet=connecté
+  const [actAs, setActAs] = useState(readActAs);
 
   useEffect(() => {
     api.get(`${API}/auth/me`)
@@ -23,12 +29,31 @@ export const AuthProvider = ({ children }) => {
   }, []);
 
   const logout = useCallback(async () => {
+    localStorage.removeItem("logitrak:actAs");
+    setActAs(null);
     try { await api.post(`${API}/auth/logout`); } catch (e) { /* ignore */ }
     setUser(false);
   }, []);
 
+  const startImpersonation = useCallback(async (tenant, name) => {
+    const { data } = await api.post(`${API}/admin/impersonation/start`, { tenant });
+    const info = { tenant, name: data.client?.name || name, logId: data.log_id };
+    localStorage.setItem("logitrak:actAs", JSON.stringify(info));
+    setActAs(info);
+    return info;
+  }, []);
+
+  const endImpersonation = useCallback(async () => {
+    const current = readActAs();
+    localStorage.removeItem("logitrak:actAs");
+    setActAs(null);
+    if (current?.logId) {
+      try { await api.post(`${API}/admin/impersonation/end`, { log_id: current.logId }); } catch (e) { /* ignore */ }
+    }
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ user, login, logout }}>
+    <AuthContext.Provider value={{ user, login, logout, actAs, startImpersonation, endImpersonation }}>
       {children}
     </AuthContext.Provider>
   );

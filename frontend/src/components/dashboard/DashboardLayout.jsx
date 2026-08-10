@@ -34,10 +34,25 @@ export const DashboardLayout = () => {
   const [fromDate, setFromDate] = useState(initFrom);
   const [toDate, setToDate] = useState(() => fmt(new Date()));
   const [debugMode, setDebugMode] = useState(false);
-  const { user } = useAuth();
+  const { user, actAs } = useAuth();
   const isAdmin = user?.role === "SUPER_ADMIN";
+  const [modules, setModules] = useState(null);
 
-  const visibleTabs = isAdmin ? [...TABS, ADMIN_TAB] : TABS;
+  useEffect(() => {
+    api.get(`${API}/tenant/context`)
+      .then((r) => setModules(r.data.modules))
+      .catch(() => setModules(null));
+  }, [actAs?.tenant]);
+
+  const MODULE_BY_TAB = { overview: "dashboard", analyse: "analyse", drivers: "conducteurs", vehicles: "vehicules" };
+  const baseTabs = modules ? TABS.filter((t) => modules.includes(MODULE_BY_TAB[t.id])) : TABS;
+  const visibleTabs = isAdmin && !actAs ? [...baseTabs, ADMIN_TAB] : baseTabs;
+
+  useEffect(() => {
+    if (modules && visibleTabs.length && !visibleTabs.some((t) => t.id === activeTab)) {
+      setActiveTab(visibleTabs[0].id);
+    }
+  }, [modules]);
 
   const fetchAll = useCallback(async (from, to) => {
     const f = from || fromDate;
@@ -99,7 +114,8 @@ export const DashboardLayout = () => {
       <Header title="Dashboard"
         subtitle={`${vehicles.length} vehicules — ${activeVehicles} en ligne — ${totalKm} km`}
         onRefresh={() => fetchAll()} lastUpdate={lastUpdate} alertCount={0}
-        debugMode={debugMode} onDebugToggle={() => setDebugMode(d => !d)} onExportPDF={handleExportPDF}>
+        debugMode={debugMode} onDebugToggle={() => setDebugMode(d => !d)}
+        onExportPDF={!modules || modules.includes("rapports") ? handleExportPDF : undefined}>
         <PeriodSelector period={period} setPeriod={setPeriod}
           fromDate={fromDate} setFromDate={setFromDate} toDate={toDate} setToDate={setToDate}
           onApply={handlePeriodApply} />

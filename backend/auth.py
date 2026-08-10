@@ -16,6 +16,23 @@ ROLES = ("SUPER_ADMIN", "ADMIN", "MANAGER", "READ_ONLY", "DRIVER")
 MAX_LOGIN_ATTEMPTS = 5
 LOCKOUT_MINUTES = 15
 
+MODULES = [
+    {"id": "dashboard", "label": "Vue générale"},
+    {"id": "analyse", "label": "Analyse flotte"},
+    {"id": "conducteurs", "label": "Conducteurs & Éco-conduite"},
+    {"id": "vehicules", "label": "Véhicules & Documents"},
+    {"id": "carburant", "label": "Carburant"},
+    {"id": "rapports", "label": "Rapports & Exports"},
+]
+
+MODULE_PATH_MAP = (
+    ("/api/drivers/ecodriving", "conducteurs"),
+    ("/api/reports/driver", "conducteurs"),
+    ("/api/vehicles/admin", "vehicules"),
+    ("/api/config/fuel", "carburant"),
+    ("/api/export/", "rapports"),
+)
+
 
 def _secret() -> str:
     return os.environ["JWT_SECRET"]
@@ -107,6 +124,25 @@ async def get_current_user(request: Request, db) -> dict:
 def make_require_user(db):
     async def require_user(request: Request) -> dict:
         user = await get_current_user(request, db)
+        role = user.get("role")
+        if role != "SUPER_ADMIN":
+            if role in ("READ_ONLY", "DRIVER") and request.method not in ("GET", "HEAD", "OPTIONS"):
+                raise HTTPException(status_code=403, detail="Accès en lecture seule")
+            tenant = user.get("tenant_id")
+            client = None
+            if tenant:
+                client = await db.clients.find_one({"tenant": tenant},
+                                                   {"_id": 0, "is_active": 1, "modules": 1})
+                if client is None and tenant != "default":
+                    raise HTTPException(status_code=403, detail="Client introuvable")
+                if client and not client.get("is_active", True):
+                    raise HTTPException(status_code=403, detail="Compte client suspendu")
+            modules = (client or {}).get("modules")
+            if modules is not None:
+                path = request.url.path
+                for prefix, mod in MODULE_PATH_MAP:
+                    if path.startswith(prefix) and mod not in modules:
+                        raise HTTPException(status_code=403, detail=f"Module '{mod}' non activé pour ce client")
         request.state.user = user
         return user
     return require_user
@@ -151,8 +187,19 @@ async def seed_and_migrate(db):
     await db.flows.create_index("tenant")
     await db.login_attempts.create_index("identifier")
     await db.impersonation_logs.create_index([("tenant", 1), ("started_at", -1)])
+    await db.tenant_sync.create_index("tenant", unique=True)
+    await db.audit_log.create_index([("tenant", 1), ("at", -1)])
 
     await db.flows.update_many({"tenant": {"$exists": False}}, {"$set": {"tenant": "default"}})
+
+    default_hash = os.environ.get("NAVIXY_HASH", "")
+    async for c in db.clients.find({"tenant": {"$exists": False}}):
+        stored = c.get("navixy_hash", "")
+        plain = decrypt_hash(stored) if stored.startswith("enc:") else stored
+        tenant = "default" if (default_hash and plain == default_hash) else c["subdomain"]
+        await db.clients.update_one({"_id": c["_id"]}, {"$set": {"tenant": tenant}})
+    await db.clients.update_many({"modules": {"$exists": False}},
+                                 {"$set": {"modules": [m["id"] for m in MODULES]}})
 
     async for c in db.clients.find({"navixy_hash": {"$exists": True, "$ne": ""}}):
         h = c["navixy_hash"]
@@ -198,8 +245,14 @@ def create_auth_router(db) -> APIRouter:
             raise HTTPException(status_code=401, detail="Email ou mot de passe incorrect")
         if not user.get("is_active", True):
             raise HTTPException(status_code=403, detail="Compte désactivé")
+        if user.get("tenant_id"):
+            client = await db.clients.find_one({"tenant": user["tenant_id"]}, {"is_active": 1})
+            if client and not client.get("is_active", True):
+                raise HTTPException(status_code=403, detail="Compte client suspendu — contactez LOGITRAK")
 
         await db.login_attempts.delete_one({"identifier": identifier})
+        await db.users.update_one({"id": user["id"]},
+                                  {"$set": {"last_login_at": datetime.now(timezone.utc).isoformat()}})
         _set_cookies(response, create_access_token(user), create_refresh_token(user["id"]))
         return {"success": True, "user": _sanitize(user)}
 

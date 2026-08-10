@@ -1,8 +1,14 @@
 import { useState, useEffect } from "react";
+import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import "@/App.css";
 import { DashboardLayout } from "@/components/dashboard/DashboardLayout";
 import { LoginPage } from "@/components/auth/LoginPage";
 import { AuthProvider, useAuth } from "@/lib/AuthContext";
+import { ImpersonationBanner } from "@/components/shared/ImpersonationBanner";
+import { SuperAdminLayout } from "@/components/superadmin/SuperAdminLayout";
+import SuperAdminDashboard from "@/components/superadmin/SuperAdminDashboard";
+import ClientsPage from "@/components/superadmin/ClientsPage";
+import ClientDetail from "@/components/superadmin/ClientDetail";
 import { API, api } from "@/lib/api";
 
 const Spinner = () => (
@@ -11,27 +17,32 @@ const Spinner = () => (
   </div>
 );
 
-function Gate() {
-  const { user } = useAuth();
+const useClientInfo = () => {
   const [clientInfo, setClientInfo] = useState(null);
-
   useEffect(() => {
     api.get(`${API}/client/info`)
       .then((r) => { if (r.data.success) setClientInfo(r.data.client); })
       .catch(() => {});
   }, []);
-
   useEffect(() => {
     if (clientInfo?.primary_color) {
-      document.documentElement.style.setProperty('--primary-color', clientInfo.primary_color);
+      document.documentElement.style.setProperty("--primary-color", clientInfo.primary_color);
     }
   }, [clientInfo]);
+  return clientInfo;
+};
+
+function DashboardGate() {
+  const { user, actAs } = useAuth();
+  const clientInfo = useClientInfo();
 
   if (user === null) return <Spinner />;
   if (user === false) return <LoginPage clientInfo={clientInfo} />;
+  if (user.role === "SUPER_ADMIN" && !actAs) return <Navigate to="/super-admin" replace />;
 
   return (
     <div className="h-screen flex flex-col bg-[#F7F7F8]" data-testid="app-container">
+      <ImpersonationBanner />
       <main className="flex-1 overflow-auto">
         <DashboardLayout />
       </main>
@@ -39,11 +50,29 @@ function Gate() {
   );
 }
 
+function RequireSuperAdmin({ children }) {
+  const { user } = useAuth();
+  const clientInfo = useClientInfo();
+  if (user === null) return <Spinner />;
+  if (user === false) return <LoginPage clientInfo={clientInfo} />;
+  if (user.role !== "SUPER_ADMIN") return <Navigate to="/" replace />;
+  return children;
+}
+
 function App() {
   return (
-    <AuthProvider>
-      <Gate />
-    </AuthProvider>
+    <BrowserRouter>
+      <AuthProvider>
+        <Routes>
+          <Route path="/super-admin" element={<RequireSuperAdmin><SuperAdminLayout /></RequireSuperAdmin>}>
+            <Route index element={<SuperAdminDashboard />} />
+            <Route path="clients" element={<ClientsPage />} />
+            <Route path="clients/:id" element={<ClientDetail />} />
+          </Route>
+          <Route path="/*" element={<DashboardGate />} />
+        </Routes>
+      </AuthProvider>
+    </BrowserRouter>
   );
 }
 

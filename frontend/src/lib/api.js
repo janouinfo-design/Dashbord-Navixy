@@ -12,6 +12,14 @@ const getApiUrl = () => {
 export const API = getApiUrl();
 export const api = axios.create({ withCredentials: true });
 
+api.interceptors.request.use((config) => {
+  try {
+    const a = JSON.parse(localStorage.getItem("logitrak:actAs"));
+    if (a?.tenant) config.headers["X-Act-As-Tenant"] = a.tenant;
+  } catch (e) { /* ignore */ }
+  return config;
+});
+
 let refreshPromise = null;
 
 api.interceptors.response.use(

@@ -27,8 +27,9 @@ from ecodriving import compute_driver_ecodriving
 from vehicle_admin import create_vehicle_admin_router
 from auth import (
     make_require_user, require_role, create_auth_router,
-    seed_and_migrate, encrypt_hash, decrypt_hash,
+    seed_and_migrate, encrypt_hash, decrypt_hash, MODULES,
 )
+from super_admin import create_super_admin_router
 
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / '.env')
@@ -75,12 +76,12 @@ async def get_client_from_subdomain(request: Request) -> Optional[dict]:
 
 async def _resolve_tenant(tenant: str):
     """Returns (navixy_hash, tenant_name) for a validated tenant identifier."""
+    client = await db.clients.find_one({"tenant": tenant, "is_active": True}, {"_id": 0})
+    if client and client.get('navixy_hash'):
+        return decrypt_hash(client['navixy_hash']), tenant
     if tenant == 'default':
         return DEFAULT_NAVIXY_HASH, 'default'
-    client = await db.clients.find_one({"subdomain": tenant, "is_active": True}, {"_id": 0})
-    if not client or not client.get('navixy_hash'):
-        raise HTTPException(status_code=403, detail="Tenant inconnu ou suspendu")
-    return decrypt_hash(client['navixy_hash']), tenant
+    raise HTTPException(status_code=403, detail="Tenant inconnu ou suspendu")
 
 
 async def get_tenant_context(request: Request):
@@ -93,22 +94,15 @@ async def get_tenant_context(request: Request):
     if user.get('role') == 'SUPER_ADMIN':
         act_as = request.headers.get('X-Act-As-Tenant')
         if act_as:
-            act_as = act_as.strip().lower()
-            h, t = await _resolve_tenant(act_as)
-            await db.impersonation_logs.insert_one({
-                "super_admin_id": user['id'], "email": user['email'], "tenant": t,
-                "path": str(request.url.path),
-                "started_at": datetime.now(timezone.utc).isoformat(),
-            })
-            return h, t
+            return await _resolve_tenant(act_as.strip().lower())
         if sub_client:
-            return decrypt_hash(sub_client['navixy_hash']), sub_client['subdomain']
-        return DEFAULT_NAVIXY_HASH, 'default'
+            return decrypt_hash(sub_client['navixy_hash']), sub_client.get('tenant') or sub_client['subdomain']
+        return await _resolve_tenant('default')
 
     tenant = user.get('tenant_id')
     if not tenant:
         raise HTTPException(status_code=403, detail="Aucun tenant associé à ce compte")
-    if sub_client and sub_client['subdomain'] != tenant:
+    if sub_client and (sub_client.get('tenant') or sub_client['subdomain']) != tenant:
         raise HTTPException(status_code=403, detail="Tenant non autorisé sur ce domaine")
     return await _resolve_tenant(tenant)
 
@@ -133,10 +127,15 @@ class ClientCreate(BaseModel):
 
 class ClientUpdate(BaseModel):
     name: Optional[str] = None
+    company_name: Optional[str] = None
     navixy_hash: Optional[str] = None
     logo_url: Optional[str] = None
     primary_color: Optional[str] = None
     contact_email: Optional[str] = None
+    phone: Optional[str] = None
+    address: Optional[str] = None
+    country: Optional[str] = None
+    timezone: Optional[str] = None
     is_active: Optional[bool] = None
 
 class Client(BaseModel):
@@ -202,6 +201,19 @@ async def get_client_info(request: Request):
         safe = {k: info.get(k) for k in ('name', 'subdomain', 'logo_url', 'primary_color')}
         return {"success": True, "client": safe, "is_multi_tenant": True}
     return {"success": True, "client": {"name": "Default", "primary_color": "#e53935"}, "is_multi_tenant": False}
+
+# ============ TENANT CONTEXT (utilisateur authentifié) ============
+
+@api_router.get("/tenant/context")
+async def tenant_context(request: Request):
+    _, tenant = await get_tenant_context(request)
+    user = request.state.user
+    client = await db.clients.find_one({"tenant": tenant}, {"_id": 0, "navixy_hash": 0})
+    modules = (client or {}).get("modules") or [m["id"] for m in MODULES]
+    return {"success": True, "tenant": tenant,
+            "client_name": (client or {}).get("name", "Default"),
+            "modules": modules, "role": user.get("role"),
+            "is_impersonating": user.get("role") == "SUPER_ADMIN" and bool(request.headers.get("X-Act-As-Tenant"))}
 
 # ============ ADMIN — CLIENTS CRUD (SUPER_ADMIN uniquement, hash jamais exposé) ============
 
@@ -343,7 +355,12 @@ async def get_fleet_stats(
     tracker_ids: Optional[str] = Query(None),
 ):
     h, tenant = await get_tenant_context(request)
-    return await engine.compute_fleet_stats(h, from_date, to_date, tracker_ids, tenant)
+    result = await engine.compute_fleet_stats(h, from_date, to_date, tracker_ids, tenant)
+    if isinstance(result, dict) and result.get('vehicles'):
+        await db.tenant_sync.update_one(
+            {"tenant": tenant},
+            {"$set": {"last_sync_at": datetime.now(timezone.utc).isoformat()}}, upsert=True)
+    return result
 
 @api_router.get("/fleet/efficiency")
 async def get_fleet_efficiency(
@@ -914,6 +931,7 @@ async def export_pdf(
 # ============ MOUNT ============
 
 api_router.include_router(create_vehicle_admin_router(db, navixy, get_tenant_context, NAVIXY_API_URL))
+api_router.include_router(create_super_admin_router(db, navixy, cache))
 app.include_router(auth_router)
 app.include_router(public_router)
 app.include_router(api_router)
