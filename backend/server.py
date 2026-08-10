@@ -688,9 +688,18 @@ async def export_pdf(
 
     elements = []
 
-    # Title
-    elements.append(Paragraph(f"{client_name} — Rapport Flotte", title_style))
-    elements.append(Paragraph(f"Periode: {from_date} au {to_date} | Genere le {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M')} UTC", sub_style))
+    # Title avec logo LOGITRAK
+    _logo_path = "/app/backend/assets/logo-logitrak.png"
+    _title_cells = [Paragraph(f"{client_name} — Rapport Flotte", title_style),
+                    Paragraph(f"Periode: {from_date} au {to_date} | Genere le {datetime.now(timezone.utc).strftime('%d/%m/%Y %H:%M')} UTC", sub_style)]
+    if os.path.exists(_logo_path):
+        _hdr = Table([[RLImage(_logo_path, width=14*mm, height=14*mm), _title_cells]],
+                     colWidths=[18*mm, 152*mm])
+        _hdr.setStyle(TableStyle([('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                                  ('LEFTPADDING', (0, 0), (0, 0), 0)]))
+        elements.append(_hdr)
+    else:
+        elements.extend(_title_cells)
     elements.append(Spacer(1, 8*mm))
 
     # Summary KPIs

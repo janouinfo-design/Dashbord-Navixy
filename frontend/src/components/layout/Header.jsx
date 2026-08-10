@@ -22,6 +22,7 @@ export const Header = ({ title, subtitle, onRefresh, lastUpdate, alertCount = 0,
   return (
     <header className="glass-header sticky top-0 z-30 h-16 flex items-center justify-between px-4 lg:px-8" data-testid="app-header">
       <div className="flex items-center gap-4">
+        <img src="/logo-logitrak.png" alt="LOGITRAK" className="w-9 h-9 rounded-lg" data-testid="header-logo" />
         <div>
           <h2 className="text-xl font-medium tracking-tight" style={{ fontFamily: 'Outfit, sans-serif' }}>
             {title}

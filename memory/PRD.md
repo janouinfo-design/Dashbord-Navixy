@@ -88,6 +88,14 @@ Vue generale | Analyse flotte | Conducteurs | Vehicules | Couts | IoT | (Audit v
 - Cache tenant 300s (1ere generation 5-45s)
 - Tests: iteration_10.json — 100% backend (9/9) + 100% frontend
 
+## Logo LOGITRAK (iter 14d)
+- Logo genere (badge noir arrondi, camion blanc + pin GPS emeraude), fond blanc converti en transparent
+- Fichiers: /app/frontend/public/logo-logitrak.png + /app/backend/assets/logo-logitrak.png (copies separees
+  car containers frontend/backend distincts au deploiement)
+- Header dashboard: logo 36px a gauche du titre (header-logo); Sidebar.jsx aussi equipe (composant non utilise)
+- PDF: logo 14mm a gauche du titre via Table (fallback sans logo si fichier absent)
+- LEÇON image gen: le mode transparent peut incruster un damier en pixels — demander fond blanc opaque puis detourer
+
 ## Export PDF enrichi (iter 14c)
 - /api/export/pdf enrichi: photos garage embarquees (avatars, telechargement parallele, echecs ignores),
   plaque sous le nom du vehicule, section "Echeances administratives" (leasing Mongo, assurance garage

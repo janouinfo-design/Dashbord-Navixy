@@ -21,10 +21,13 @@ export const Sidebar = ({ activeModule, setActiveModule, isOpen, setIsOpen, clie
         ${isOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
       `}>
         <div className="h-16 flex items-center justify-between px-5 border-b border-gray-100 flex-shrink-0">
-          {!collapsed && (
-            <h1 className="text-lg font-semibold tracking-tight" style={{ fontFamily: 'Outfit, sans-serif' }}>
+          {!collapsed ? (
+            <h1 className="flex items-center gap-2.5 text-lg font-semibold tracking-tight" style={{ fontFamily: 'Outfit, sans-serif' }}>
+              <img src="/logo-logitrak.png" alt="LOGITRAK" className="w-8 h-8 rounded-lg" data-testid="sidebar-logo" />
               <span className="text-[#111]">{clientInfo?.name || 'LOGITAG'}</span>
             </h1>
+          ) : (
+            <img src="/logo-logitrak.png" alt="LOGITRAK" className="w-8 h-8 rounded-lg mx-auto" data-testid="sidebar-logo-collapsed" />
           )}
           <button className="hidden lg:flex p-1.5 hover:bg-gray-100 rounded-lg" onClick={() => setCollapsed(!collapsed)} data-testid="sidebar-collapse">
             <ChevronLeft size={16} className={`text-gray-400 transition-transform ${collapsed ? 'rotate-180' : ''}`} />
