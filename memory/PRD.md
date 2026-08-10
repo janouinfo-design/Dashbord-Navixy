@@ -88,6 +88,14 @@ Vue generale | Analyse flotte | Conducteurs | Vehicules | Couts | IoT | (Audit v
 - Cache tenant 300s (1ere generation 5-45s)
 - Tests: iteration_10.json — 100% backend (9/9) + 100% frontend
 
+## Liaison garage depuis LOGITRAK (iter 14b)
+- POST /api/vehicles/admin/navixy-garage/{vehicle_id}/link {tracker_id|null} — lie/delie (vehicle/update)
+- UI: fiche vehicule non lie → panneau ambre avec selecteur des vehicules garage non lies + "Lier ce vehicule";
+  vehicule lie → bouton "Delier" sous la section garage
+- Cycle link/unlink teste par curl (Mini ONE ↔ Tab Samsung, restaure)
+- AUCUNE association auto: les 5 vehicules garage (Mini ONE, PM-5 Citroen, smart R, Mercedes, FR 75)
+  ne matchent aucun traceur libre par nom/plaque — paires a faire par l'utilisateur via l'UI
+
 ## Synchronisation Garage (iter 14) — BIDIRECTIONNELLE
 - Source commune = garage plateforme GPS (vehicle/list|read|update|avatar/upload) — UI dit "garage LOGITRAK"
 - Correspondance par tracker_id (3 lies: 781479 Audi/164367, 3076994 Skoda, 3131157 Toyota; 5 non lies)

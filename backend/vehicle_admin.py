@@ -95,6 +95,27 @@ def create_vehicle_admin_router(db, navixy, get_tenant_context, navixy_api_url):
         reread = await navixy.read_vehicle(vehicle_id, h)
         return {"success": True, "vehicle": _map_garage(reread["value"])}
 
+    @router.post("/navixy-garage/{vehicle_id}/link")
+    async def garage_link(vehicle_id: int, request: Request, payload: dict = Body(...)):
+        """Lie (tracker_id int) ou délie (tracker_id null) un véhicule garage à un traceur."""
+        h, _ = await get_tenant_context(request)
+        tracker_id = payload.get("tracker_id")
+        if tracker_id is not None:
+            try:
+                tracker_id = int(tracker_id)
+            except (TypeError, ValueError):
+                raise HTTPException(400, "tracker_id invalide")
+        read = await navixy.read_vehicle(vehicle_id, h)
+        if not read.get("success"):
+            raise HTTPException(404, "Véhicule garage introuvable")
+        vehicle = read["value"]
+        vehicle["tracker_id"] = tracker_id
+        upd = await navixy.update_vehicle(vehicle, h)
+        if not upd.get("success"):
+            raise HTTPException(502, f"Échec liaison: {upd.get('status')}")
+        reread = await navixy.read_vehicle(vehicle_id, h)
+        return {"success": True, "vehicle": _map_garage(reread["value"])}
+
     @router.post("/navixy-garage/{vehicle_id}/photo")
     async def garage_photo(vehicle_id: int, request: Request, file: UploadFile = File(...)):
         h, _ = await get_tenant_context(request)

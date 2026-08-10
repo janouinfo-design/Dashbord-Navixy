@@ -250,11 +250,23 @@ const DocumentsTab = ({ tid, record, refresh }) => {
 };
 
 // ─── Fiche véhicule (drawer) ───
-const VehicleSheet = ({ vehicle, record, garageVehicle, groupName, onClose, onSaved, onGarageSaved }) => {
+const VehicleSheet = ({ vehicle, record, garageVehicle, unlinkedGarage, groupName, onClose, onSaved, onGarageSaved, onLinkChanged }) => {
   const [tab, setTab] = useState("general");
   const [photoUploading, setPhotoUploading] = useState(false);
+  const [linkChoice, setLinkChoice] = useState("");
+  const [linking, setLinking] = useState(false);
   const tid = vehicle.tracker_id;
   const gv = garageVehicle;
+
+  const doLink = async (vehicleId, trackerId) => {
+    setLinking(true);
+    try {
+      await api.post(`${API}/vehicles/admin/navixy-garage/${vehicleId}/link`, { tracker_id: trackerId });
+      await onLinkChanged();
+    } catch (e) { /* surfaced via state refresh */ }
+    setLinking(false);
+    setLinkChoice("");
+  };
 
   const saveSection = async (section, data) => {
     const res = await api.put(`${API}/vehicles/admin/${tid}`, { section, data });
@@ -339,22 +351,50 @@ const VehicleSheet = ({ vehicle, record, garageVehicle, groupName, onClose, onSa
         {tab === "general" && (
           <div className="space-y-4">
             {gv ? (
-              <EditableSection title="Identité véhicule — synchronisée avec le garage LOGITRAK" subtitle={`Modifications propagées dans les 2 sens (véhicule garage #${gv.vehicle_id})`} testId="section-garage"
-                values={gv} onSave={saveGarage}
-                fields={[
-                  { key: "label", label: "Nom" },
-                  { key: "model", label: "Modèle" },
-                  { key: "reg_number", label: "Plaque d'immatriculation" },
-                  { key: "vin", label: "VIN" },
-                  { key: "manufacture_year", label: "Année", type: "number" },
-                  { key: "color", label: "Couleur" },
-                  { key: "_garage", label: "Garage", readonly: true, value: gv.garage || "—" },
-                  { key: "_fuel", label: "Carburant", readonly: true, value: [gv.fuel_type, gv.fuel_grade].filter(Boolean).join(" · ") || "—" },
-                ]} />
+              <div>
+                <EditableSection title="Identité véhicule — synchronisée avec le garage LOGITRAK" subtitle={`Modifications propagées dans les 2 sens (véhicule garage #${gv.vehicle_id})`} testId="section-garage"
+                  values={gv} onSave={saveGarage}
+                  fields={[
+                    { key: "label", label: "Nom" },
+                    { key: "model", label: "Modèle" },
+                    { key: "reg_number", label: "Plaque d'immatriculation" },
+                    { key: "vin", label: "VIN" },
+                    { key: "manufacture_year", label: "Année", type: "number" },
+                    { key: "color", label: "Couleur" },
+                    { key: "_garage", label: "Garage", readonly: true, value: gv.garage || "—" },
+                    { key: "_fuel", label: "Carburant", readonly: true, value: [gv.fuel_type, gv.fuel_grade].filter(Boolean).join(" · ") || "—" },
+                  ]} />
+                <button onClick={() => doLink(gv.vehicle_id, null)} disabled={linking}
+                  className="mt-2 text-[10px] text-gray-400 hover:text-red-500 underline" data-testid="garage-unlink-btn">
+                  {linking ? "Déliaison…" : "Délier ce véhicule du garage (retire la liaison traceur)"}
+                </button>
+              </div>
             ) : (
-              <div className="p-4 bg-amber-50 border border-amber-100 rounded-xl text-xs text-amber-700" data-testid="no-garage-note">
-                Aucun véhicule du garage LOGITRAK n'est lié à ce traceur. Pour activer la synchronisation photo/fiche,
-                associez le traceur dans la fiche véhicule de la plateforme GPS (champ « Traceur »).
+              <div className="p-4 bg-amber-50 border border-amber-100 rounded-xl" data-testid="no-garage-note">
+                <div className="text-xs text-amber-700 mb-3">
+                  Aucun véhicule du garage LOGITRAK n'est lié à ce traceur. Liez-en un pour activer la synchronisation photo/fiche dans les 2 sens :
+                </div>
+                {unlinkedGarage.length > 0 ? (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <select value={linkChoice} onChange={e => setLinkChoice(e.target.value)}
+                      className="text-xs border border-amber-200 rounded-lg px-3 py-2 bg-white focus:outline-none min-w-[220px]"
+                      data-testid="garage-link-select">
+                      <option value="">— Choisir un véhicule du garage —</option>
+                      {unlinkedGarage.map(u => (
+                        <option key={u.vehicle_id} value={u.vehicle_id}>
+                          {[u.label, u.reg_number, u.model].filter((x, i, a) => x && a.indexOf(x) === i).join(" · ")}
+                        </option>
+                      ))}
+                    </select>
+                    <button onClick={() => linkChoice && doLink(Number(linkChoice), tid)} disabled={!linkChoice || linking}
+                      className="flex items-center gap-1.5 px-3 py-2 text-xs font-medium bg-[#111] text-white rounded-lg disabled:opacity-40"
+                      data-testid="garage-link-btn">
+                      {linking ? <Loader2 size={12} className="animate-spin" /> : <Check size={12} />}Lier ce véhicule
+                    </button>
+                  </div>
+                ) : (
+                  <div className="text-[10px] text-amber-600">Aucun véhicule du garage disponible — créez-le d'abord dans le garage de la plateforme GPS.</div>
+                )}
               </div>
             )}
             <EditableSection title="Gestion interne" subtitle="Champs propres à LOGITRAK Dashboard" testId="section-general"
@@ -597,8 +637,10 @@ export const VehiclesTab = ({ data }) => {
             <div className="fixed inset-0 bg-black/20 z-40" onClick={() => setSelected(null)} />
             <VehicleSheet vehicle={v} record={records[String(selected)] || emptyRec}
               garageVehicle={garage.linked[String(selected)] || null}
+              unlinkedGarage={garage.unlinked}
               groupName={groupTitle[groupIdByTid[selected]]}
-              onClose={() => setSelected(null)} onSaved={onSaved} onGarageSaved={onGarageSaved} />
+              onClose={() => setSelected(null)} onSaved={onSaved} onGarageSaved={onGarageSaved}
+              onLinkChanged={fetchGarage} />
           </>
         );
       })()}
