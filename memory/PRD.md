@@ -88,6 +88,14 @@ Vue generale | Analyse flotte | Conducteurs | Vehicules | Couts | IoT | (Audit v
 - Cache tenant 300s (1ere generation 5-45s)
 - Tests: iteration_10.json — 100% backend (9/9) + 100% frontend
 
+## Export PDF enrichi (iter 14c)
+- /api/export/pdf enrichi: photos garage embarquees (avatars, telechargement parallele, echecs ignores),
+  plaque sous le nom du vehicule, section "Echeances administratives" (leasing Mongo, assurance garage
+  fallback Mongo, prochain controle non effectue — texte colore rouge/orange/vert), section
+  "Eco-conduite — notation native" (score moyen, table conducteurs: score /100 + etoiles n/5 + penalites/100km)
+- Generation ~19s hors cache (rapport plugin 46), <2s en cache; timeout frontend export porte a 120s
+- Verifie par extraction texte pypdf: toutes les sections presentes avec donnees reelles
+
 ## Liaison garage depuis LOGITRAK (iter 14b)
 - POST /api/vehicles/admin/navixy-garage/{vehicle_id}/link {tracker_id|null} — lie/delie (vehicle/update)
 - UI: fiche vehicule non lie → panneau ambre avec selecteur des vehicules garage non lies + "Lier ce vehicule";

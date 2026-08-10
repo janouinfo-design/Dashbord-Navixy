@@ -14,6 +14,7 @@ import json
 import io
 import csv
 import uuid
+import asyncio
 from pathlib import Path
 from pydantic import BaseModel, Field, ConfigDict
 from typing import List, Optional, Dict, Any
@@ -630,6 +631,44 @@ async def export_pdf(
     h, tenant = await get_tenant_context(request)
     stats = await engine.compute_fleet_stats(h, from_date, to_date, None, tenant)
     comp = await engine.compute_vehicle_comparison(h, from_date, to_date, tenant)
+    eco = await compute_driver_ecodriving(navixy, cache, h, from_date, to_date, tenant)
+    garage_data = await navixy.get_vehicles(h)
+    admin_docs = await db.vehicle_admin.find({"tenant": tenant}, {"_id": 0}).to_list(1000)
+    admin_map = {d["tracker_id"]: d for d in admin_docs}
+    garage_map = {v["tracker_id"]: v for v in garage_data.get("list", []) if v.get("tracker_id")}
+
+    # Photos garage (avatars) — telechargees en parallele, echecs ignores
+    import httpx as _httpx
+
+    async def _fetch_img(url):
+        try:
+            async with _httpx.AsyncClient(timeout=10) as c:
+                r = await c.get(url)
+                if r.status_code == 200 and r.headers.get("content-type", "").startswith("image"):
+                    return r.content
+        except Exception:
+            pass
+        return None
+
+    photo_targets = {tid: f"{NAVIXY_API_URL}/static/vehicle/avatars/{v['avatar_file_name']}"
+                     for tid, v in garage_map.items() if v.get("avatar_file_name")}
+    photo_bytes = dict(zip(photo_targets.keys(),
+                           await asyncio.gather(*[_fetch_img(u) for u in photo_targets.values()])))
+
+    def _echeance(date_str):
+        if not date_str:
+            return ("—", None)
+        try:
+            d = datetime.strptime(str(date_str)[:10], "%Y-%m-%d").date()
+        except ValueError:
+            return ("—", None)
+        days = (d - datetime.now(timezone.utc).date()).days
+        dt = d.strftime("%d.%m.%Y")
+        if days < 0:
+            return (f"{dt}\nEchu depuis {-days} j", "red")
+        if days < 30:
+            return (f"{dt}\nDans {days} j", "orange")
+        return (f"{dt}\nDans {days} j", "green")
 
     client_info = await get_client_from_subdomain(request)
     client_name = client_info.get('name', 'LOGITRAK') if client_info else 'LOGITRAK'
@@ -637,7 +676,7 @@ async def export_pdf(
     from reportlab.lib.pagesizes import A4
     from reportlab.lib.units import mm
     from reportlab.lib import colors as rl_colors
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
+    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, Image as RLImage
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 
     buf = io.BytesIO()
@@ -676,15 +715,22 @@ async def export_pdf(
     elements.append(kpi_t)
     elements.append(Spacer(1, 6*mm))
 
-    # Vehicle table
+    # Vehicle table (avec photos garage)
     elements.append(Paragraph("Detail par vehicule", h2_style))
-    header = ['Vehicule', 'Km', 'Odometre', 'Moteur (h)', 'Etat', 'Utilisation']
+    header = ['', 'Vehicule', 'Km', 'Odometre', 'Moteur (h)', 'Etat', 'Utilisation']
     rows = [header]
     comp_map = {v['tracker_id']: v for v in comp.get('vehicles', [])}
     for v in stats.get('vehicles', []):
         cv = comp_map.get(v['tracker_id'], {})
+        img = photo_bytes.get(v['tracker_id'])
+        cell = RLImage(io.BytesIO(img), width=13*mm, height=9*mm) if img else ''
+        gv = garage_map.get(v['tracker_id'], {})
+        label = v['label'][:22]
+        if gv.get('reg_number'):
+            label = f"{label}\n{gv['reg_number']}"
         rows.append([
-            v['label'][:22],
+            cell,
+            label,
             f"{v['mileage']}",
             f"{round(v['total_odometer'])}",
             f"{round(v['engine_hours'])}",
@@ -692,20 +738,101 @@ async def export_pdf(
             f"{cv.get('utilization_score', 0)}%",
         ])
 
-    col_w = [55*mm, 22*mm, 28*mm, 25*mm, 22*mm, 28*mm]
+    col_w = [17*mm, 48*mm, 20*mm, 25*mm, 23*mm, 22*mm, 25*mm]
     tbl = Table(rows, colWidths=col_w, repeatRows=1)
     tbl.setStyle(TableStyle([
         ('BACKGROUND', (0, 0), (-1, 0), rl_colors.Color(0.07, 0.07, 0.07)),
         ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.white),
         ('FONTSIZE', (0, 0), (-1, 0), 8),
         ('FONTSIZE', (0, 1), (-1, -1), 7),
-        ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
+        ('ALIGN', (2, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
         ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.Color(0.85, 0.85, 0.85)),
         ('ROWBACKGROUNDS', (0, 1), (-1, -1), [rl_colors.white, rl_colors.Color(0.97, 0.97, 0.97)]),
-        ('TOPPADDING', (0, 0), (-1, -1), 4),
-        ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+        ('TOPPADDING', (0, 0), (-1, -1), 3),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
     ]))
     elements.append(tbl)
+
+    # ---- Echeances administratives ----
+    elements.append(Paragraph("Echeances administratives", h2_style))
+    ech_rows = [['Vehicule', 'Leasing', 'Assurance', 'Prochain controle']]
+    ech_styles = []
+    color_map = {"red": rl_colors.Color(0.8, 0.1, 0.1), "orange": rl_colors.Color(0.85, 0.5, 0),
+                 "green": rl_colors.Color(0.0, 0.55, 0.3)}
+    for ridx, v in enumerate(stats.get('vehicles', []), start=1):
+        tid = v['tracker_id']
+        rec = admin_map.get(tid, {})
+        gv = garage_map.get(tid, {})
+        leasing_txt, leasing_c = _echeance((rec.get('leasing') or {}).get('date_fin'))
+        assur_txt, assur_c = _echeance(gv.get('liability_insurance_valid_till')
+                                       or (rec.get('assurance') or {}).get('date_fin'))
+        open_ctrl = sorted([c for c in (rec.get('controles') or [])
+                            if c.get('due_date') and not c.get('done_date')],
+                           key=lambda c: c['due_date'])
+        ctrl_txt, ctrl_c = _echeance(open_ctrl[0]['due_date'] if open_ctrl else None)
+        if open_ctrl:
+            ctrl_txt = f"{open_ctrl[0].get('label', 'Controle')[:20]}\n{ctrl_txt.splitlines()[-1]}"
+        ech_rows.append([v['label'][:24], leasing_txt, assur_txt, ctrl_txt])
+        for cidx, c in ((1, leasing_c), (2, assur_c), (3, ctrl_c)):
+            if c:
+                ech_styles.append(('TEXTCOLOR', (cidx, ridx), (cidx, ridx), color_map[c]))
+    ech_t = Table(ech_rows, colWidths=[55*mm, 41*mm, 42*mm, 42*mm], repeatRows=1)
+    ech_t.setStyle(TableStyle([
+        ('BACKGROUND', (0, 0), (-1, 0), rl_colors.Color(0.07, 0.07, 0.07)),
+        ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.white),
+        ('FONTSIZE', (0, 0), (-1, 0), 8),
+        ('FONTSIZE', (0, 1), (-1, -1), 7),
+        ('ALIGN', (1, 0), (-1, -1), 'CENTER'),
+        ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+        ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.Color(0.85, 0.85, 0.85)),
+        ('ROWBACKGROUNDS', (0, 1), (-1, -1), [rl_colors.white, rl_colors.Color(0.97, 0.97, 0.97)]),
+        ('TOPPADDING', (0, 0), (-1, -1), 3),
+        ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+    ] + ech_styles))
+    elements.append(ech_t)
+    elements.append(Paragraph("Sources : leasing/controles = saisie LOGITRAK Dashboard; assurance = garage LOGITRAK (fallback saisie). Rouge = echu, orange < 30 j.", sub_style))
+
+    # ---- Eco-conduite (notation native) ----
+    if eco.get('success'):
+        elements.append(Paragraph("Eco-conduite — notation native", h2_style))
+        eco_summary = eco.get('summary', {})
+        avg = eco_summary.get('avg_score')
+        elements.append(Paragraph(
+            f"Score eco moyen : {avg if avg is not None else '—'}/100 | "
+            f"Penalites /100 km : {eco_summary.get('penalties_per_100km', '—')} | "
+            f"Distance attribuee : {round(eco_summary.get('total_distance_km', 0))} km", sub_style))
+        eco_rows = [['Conducteur', 'Vehicule', 'Score', 'Etoiles', 'Distance', 'Trajets', 'Penalites /100 km']]
+        for d in eco.get('drivers', []):
+            if not d.get('score'):
+                continue
+            eco_rows.append([
+                d['driver_name'][:20],
+                (d.get('vehicle_label') or '—')[:20],
+                f"{round(d['score']['raw'])}/100",
+                f"{d['score']['stars']}/5",
+                f"{round(d['distance_km'])} km",
+                str(d['trips_count']),
+                str(d.get('events_per_100km') if d.get('events_per_100km') is not None else '—'),
+            ])
+        if len(eco_rows) > 1:
+            eco_t = Table(eco_rows, colWidths=[35*mm, 35*mm, 20*mm, 18*mm, 24*mm, 18*mm, 30*mm], repeatRows=1)
+            eco_t.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), rl_colors.Color(0.07, 0.07, 0.07)),
+                ('TEXTCOLOR', (0, 0), (-1, 0), rl_colors.white),
+                ('FONTSIZE', (0, 0), (-1, 0), 8),
+                ('FONTSIZE', (0, 1), (-1, -1), 7),
+                ('ALIGN', (2, 0), (-1, -1), 'CENTER'),
+                ('GRID', (0, 0), (-1, -1), 0.5, rl_colors.Color(0.85, 0.85, 0.85)),
+                ('ROWBACKGROUNDS', (0, 1), (-1, -1), [rl_colors.white, rl_colors.Color(0.97, 0.97, 0.97)]),
+                ('TOPPADDING', (0, 0), (-1, -1), 3),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 3),
+            ]))
+            elements.append(Spacer(1, 2*mm))
+            elements.append(eco_t)
+        else:
+            elements.append(Paragraph("Aucune donnee eco-conduite attribuable sur la periode.", sub_style))
+        elements.append(Paragraph("Notation native rapport Qualite de conduite (plugin 46), affichee sans conversion. Attribution stricte conducteur <-> vehicule assigne.", sub_style))
 
     # Footer
     elements.append(Spacer(1, 10*mm))

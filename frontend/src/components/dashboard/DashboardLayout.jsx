@@ -77,6 +77,7 @@ export const DashboardLayout = () => {
       const res = await api.get(`${API}/export/pdf`, {
         params: { from_date: fromDate, to_date: toDate },
         responseType: 'blob',
+        timeout: 120000,
       });
       const url = window.URL.createObjectURL(new Blob([res.data], { type: 'application/pdf' }));
       const a = document.createElement('a');
