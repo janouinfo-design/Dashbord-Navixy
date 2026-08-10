@@ -25,9 +25,90 @@ def _safe_name(name: str) -> str:
     return re.sub(r'[^A-Za-z0-9._-]', '_', name or 'fichier')[:120]
 
 
-def create_vehicle_admin_router(db, get_tenant_context):
+def create_vehicle_admin_router(db, navixy, get_tenant_context, navixy_api_url):
     router = APIRouter(prefix="/vehicles/admin")
     col = db.vehicle_admin
+
+    GARAGE_FIELDS = ("label", "model", "reg_number", "vin", "manufacture_year", "color",
+                     "liability_insurance_policy_number", "liability_insurance_valid_till",
+                     "free_insurance_policy_number", "free_insurance_valid_till", "additional_info")
+
+    def _map_garage(v: dict) -> dict:
+        fn = v.get("avatar_file_name")
+        return {
+            "vehicle_id": v["id"],
+            "tracker_id": v.get("tracker_id"),
+            "label": v.get("label"),
+            "model": v.get("model"),
+            "type": v.get("type"),
+            "subtype": v.get("subtype"),
+            "manufacture_year": v.get("manufacture_year"),
+            "color": v.get("color"),
+            "reg_number": v.get("reg_number"),
+            "vin": v.get("vin"),
+            "garage": v.get("garage_organization_name"),
+            "fuel_type": v.get("fuel_type"),
+            "fuel_grade": v.get("fuel_grade"),
+            "liability_insurance_policy_number": v.get("liability_insurance_policy_number"),
+            "liability_insurance_valid_till": v.get("liability_insurance_valid_till"),
+            "avatar_file_name": fn,
+            "avatar_url": f"{navixy_api_url}/static/vehicle/avatars/{fn}" if fn else None,
+        }
+
+    @router.get("/navixy-garage")
+    async def garage_list(request: Request):
+        h, _ = await get_tenant_context(request)
+        data = await navixy.get_vehicles(h)
+        if not data.get("success"):
+            return {"success": False, "error": "Échec récupération garage"}
+        linked, unlinked = {}, []
+        for v in data.get("list", []):
+            m = _map_garage(v)
+            if m["tracker_id"]:
+                linked[str(m["tracker_id"])] = m
+            else:
+                unlinked.append(m)
+        return {"success": True, "linked": linked, "unlinked": unlinked}
+
+    @router.put("/navixy-garage/{vehicle_id}")
+    async def garage_update(vehicle_id: int, request: Request, payload: dict = Body(...)):
+        h, _ = await get_tenant_context(request)
+        data = (payload.get("data") or {})
+        read = await navixy.read_vehicle(vehicle_id, h)
+        if not read.get("success"):
+            raise HTTPException(404, "Véhicule garage introuvable")
+        vehicle = read["value"]
+        for k in GARAGE_FIELDS:
+            if k in data:
+                val = data[k]
+                if val == "":
+                    val = None if k in ("manufacture_year", "liability_insurance_valid_till", "free_insurance_valid_till", "color") else ""
+                if k == "manufacture_year" and val is not None:
+                    try:
+                        val = int(val)
+                    except (TypeError, ValueError):
+                        val = None
+                vehicle[k] = val
+        upd = await navixy.update_vehicle(vehicle, h)
+        if not upd.get("success"):
+            raise HTTPException(502, f"Échec mise à jour garage: {upd.get('status')}")
+        reread = await navixy.read_vehicle(vehicle_id, h)
+        return {"success": True, "vehicle": _map_garage(reread["value"])}
+
+    @router.post("/navixy-garage/{vehicle_id}/photo")
+    async def garage_photo(vehicle_id: int, request: Request, file: UploadFile = File(...)):
+        h, _ = await get_tenant_context(request)
+        content = await file.read()
+        if len(content) > 10 * 1024 * 1024:
+            raise HTTPException(413, "Image trop volumineuse (max 10 Mo)")
+        res = await navixy.upload_vehicle_avatar(vehicle_id, _safe_name(file.filename),
+                                                 content, file.content_type or "image/jpeg", h)
+        if not res.get("success"):
+            raise HTTPException(502, f"Échec upload photo: {res.get('status')}")
+        fn = res.get("value")
+        return {"success": True, "avatar_file_name": fn,
+                "avatar_url": f"{navixy_api_url}/static/vehicle/avatars/{fn}"}
+
 
     async def _get_or_empty(tenant: str, tracker_id: int):
         doc = await col.find_one({"tenant": tenant, "tracker_id": tracker_id}, {"_id": 0})

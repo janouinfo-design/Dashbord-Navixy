@@ -723,7 +723,7 @@ async def export_pdf(
 
 # ============ MOUNT ============
 
-api_router.include_router(create_vehicle_admin_router(db, get_tenant_context))
+api_router.include_router(create_vehicle_admin_router(db, navixy, get_tenant_context, NAVIXY_API_URL))
 app.include_router(api_router)
 
 app.add_middleware(

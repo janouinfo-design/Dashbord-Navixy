@@ -137,6 +137,22 @@ class NavixyClient:
     async def get_report_status(self, report_id: int, h: str) -> dict:
         return await self.request("report/tracker/status", {"report_id": report_id}, navixy_hash=h)
 
+    async def get_vehicles(self, h: str) -> dict:
+        return await self.request("vehicle/list", {}, navixy_hash=h)
+
+    async def read_vehicle(self, vehicle_id: int, h: str) -> dict:
+        return await self.request("vehicle/read", {"vehicle_id": vehicle_id}, navixy_hash=h)
+
+    async def update_vehicle(self, vehicle: dict, h: str) -> dict:
+        return await self.request("vehicle/update", {"vehicle": vehicle}, navixy_hash=h)
+
+    async def upload_vehicle_avatar(self, vehicle_id: int, filename: str, content: bytes, content_type: str, h: str) -> dict:
+        async with httpx.AsyncClient(timeout=60.0) as c:
+            r = await c.post(f"{self.api_url}/vehicle/avatar/upload",
+                             data={"hash": h, "vehicle_id": str(vehicle_id)},
+                             files={"file": (filename, content, content_type)})
+            return r.json()
+
     async def retrieve_report(self, report_id: int, h: str) -> dict:
         return await self.request("report/tracker/retrieve", {"report_id": report_id}, navixy_hash=h)
 

@@ -3,7 +3,7 @@ import { API, api } from "@/lib/api";
 import {
   Truck, Search, ChevronRight, X, Pencil, Check, Plus, Trash2,
   FileText, Download, Upload, Hash, Gauge, Radio, ShieldCheck,
-  CreditCard, ClipboardList, FolderOpen, Car, Loader2
+  CreditCard, ClipboardList, FolderOpen, Car, Loader2, Camera, RefreshCw
 } from "lucide-react";
 
 // ─── Échéances : rouge = échu, orange < 30 j, vert sinon ───
@@ -27,6 +27,8 @@ const Badge = ({ date, testId }) => {
 const fmtKm = (v) => v || v === 0 ? `${Math.round(v).toLocaleString("fr-FR")} km` : "—";
 const fmtSize = (b) => b > 1048576 ? `${(b / 1048576).toFixed(1)} Mo` : `${Math.max(1, Math.round(b / 1024))} Ko`;
 const fmtDate = (s) => s ? new Date(s).toLocaleDateString("fr-FR") : "—";
+// White-label: masque le nom du fournisseur dans les modèles de traceurs
+const cleanDeviceLabel = (s) => (s || "").replace(/navixy/gi, "").replace(/__+/g, "_").replace(/^_+|_+$/g, "");
 
 // Contrôle le plus proche non effectué
 const nextControle = (controles) => {
@@ -248,13 +250,31 @@ const DocumentsTab = ({ tid, record, refresh }) => {
 };
 
 // ─── Fiche véhicule (drawer) ───
-const VehicleSheet = ({ vehicle, record, groupName, onClose, onSaved }) => {
+const VehicleSheet = ({ vehicle, record, garageVehicle, groupName, onClose, onSaved, onGarageSaved }) => {
   const [tab, setTab] = useState("general");
+  const [photoUploading, setPhotoUploading] = useState(false);
   const tid = vehicle.tracker_id;
+  const gv = garageVehicle;
 
   const saveSection = async (section, data) => {
     const res = await api.put(`${API}/vehicles/admin/${tid}`, { section, data });
     if (res.data.success) onSaved(tid, res.data.record);
+  };
+  const saveGarage = async (data) => {
+    const res = await api.put(`${API}/vehicles/admin/navixy-garage/${gv.vehicle_id}`, { data });
+    if (res.data.success) onGarageSaved(tid, res.data.vehicle);
+  };
+  const uploadPhoto = async (file) => {
+    if (!file || !gv) return;
+    setPhotoUploading(true);
+    const fd = new FormData();
+    fd.append("file", file);
+    try {
+      const res = await api.post(`${API}/vehicles/admin/navixy-garage/${gv.vehicle_id}/photo`, fd,
+        { headers: { "Content-Type": "multipart/form-data" }, timeout: 60000 });
+      if (res.data.success) onGarageSaved(tid, { ...gv, avatar_file_name: res.data.avatar_file_name, avatar_url: `${res.data.avatar_url}?t=${Date.now()}` });
+    } catch (e) { /* surface via console */ }
+    setPhotoUploading(false);
   };
   const refresh = async () => {
     const res = await api.get(`${API}/vehicles/admin`);
@@ -278,12 +298,29 @@ const VehicleSheet = ({ vehicle, record, groupName, onClose, onSaved }) => {
       {/* Header */}
       <div className="sticky top-0 bg-white border-b border-gray-200 px-6 pt-4 z-10">
         <div className="flex items-start justify-between">
-          <div>
-            <h3 className="text-lg font-semibold" style={{ fontFamily: "Outfit, sans-serif" }}>{vehicle.label}</h3>
-            <div className="flex flex-wrap items-center gap-2 mt-1.5 mb-3">
-              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-gray-200 text-[10px] text-gray-500"><Hash size={10} />VIN {g.vin || "—"}</span>
-              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-gray-200 text-[10px] text-gray-500"><Gauge size={10} />{fmtKm(vehicle.total_odometer)}</span>
-              <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-gray-200 text-[10px] text-gray-500"><Radio size={10} />Tracker {tid}</span>
+          <div className="flex items-start gap-4">
+            {/* Photo synchronisée garage */}
+            <div className="relative group shrink-0">
+              {gv?.avatar_url ? (
+                <img src={gv.avatar_url} alt={vehicle.label} className="w-24 h-16 object-cover rounded-lg border border-gray-200" data-testid="sheet-photo" />
+              ) : (
+                <div className="w-24 h-16 rounded-lg bg-gray-50 border border-gray-200 flex items-center justify-center"><Truck size={22} className="text-gray-300" /></div>
+              )}
+              {gv && (
+                <label className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 rounded-lg cursor-pointer transition-opacity" title="Changer la photo (synchronisée garage)">
+                  {photoUploading ? <Loader2 size={16} className="text-white animate-spin" /> : <Camera size={16} className="text-white" />}
+                  <input type="file" accept="image/*" className="hidden" disabled={photoUploading} onChange={e => uploadPhoto(e.target.files[0])} data-testid="sheet-photo-input" />
+                </label>
+              )}
+            </div>
+            <div>
+              <h3 className="text-lg font-semibold" style={{ fontFamily: "Outfit, sans-serif" }}>{vehicle.label}</h3>
+              <div className="flex flex-wrap items-center gap-2 mt-1.5 mb-3">
+                {gv?.reg_number && <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-[#111] text-white text-[10px] font-semibold" data-testid="sheet-plate">{gv.reg_number}</span>}
+                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-gray-200 text-[10px] text-gray-500"><Hash size={10} />VIN {gv?.vin || g.vin || "—"}</span>
+                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-gray-200 text-[10px] text-gray-500"><Gauge size={10} />{fmtKm(vehicle.total_odometer)}</span>
+                <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-gray-200 text-[10px] text-gray-500"><Radio size={10} />Tracker {tid}</span>
+              </div>
             </div>
           </div>
           <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg" data-testid="sheet-close"><X size={18} className="text-gray-500" /></button>
@@ -300,21 +337,44 @@ const VehicleSheet = ({ vehicle, record, groupName, onClose, onSaved }) => {
 
       <div className="p-6">
         {tab === "general" && (
-          <EditableSection title="Informations générales" subtitle="Identité administrative du véhicule" testId="section-general"
-            values={g} onSave={(data) => saveSection("general", data)}
-            fields={[
-              { key: "marque", label: "Marque" },
-              { key: "modele", label: "Modèle" },
-              { key: "annee", label: "Année" },
-              { key: "vin", label: "VIN" },
-              { key: "_km", label: "Kilométrage (GPS)", readonly: true, value: fmtKm(vehicle.total_odometer) },
-              { key: "_groupe", label: "Groupe", readonly: true, value: groupName || "—" },
-              { key: "base", label: "Base / Site" },
-              { key: "responsable", label: "Responsable" },
-              { key: "_tracker", label: "Tracker GPS", readonly: true, value: String(tid) },
-              { key: "prochaine_maintenance", label: "Prochaine maintenance", type: "date" },
-              { key: "prochaine_expertise", label: "Prochaine expertise", type: "date" },
-            ]} />
+          <div className="space-y-4">
+            {gv ? (
+              <EditableSection title="Identité véhicule — synchronisée avec le garage LOGITRAK" subtitle={`Modifications propagées dans les 2 sens (véhicule garage #${gv.vehicle_id})`} testId="section-garage"
+                values={gv} onSave={saveGarage}
+                fields={[
+                  { key: "label", label: "Nom" },
+                  { key: "model", label: "Modèle" },
+                  { key: "reg_number", label: "Plaque d'immatriculation" },
+                  { key: "vin", label: "VIN" },
+                  { key: "manufacture_year", label: "Année", type: "number" },
+                  { key: "color", label: "Couleur" },
+                  { key: "_garage", label: "Garage", readonly: true, value: gv.garage || "—" },
+                  { key: "_fuel", label: "Carburant", readonly: true, value: [gv.fuel_type, gv.fuel_grade].filter(Boolean).join(" · ") || "—" },
+                ]} />
+            ) : (
+              <div className="p-4 bg-amber-50 border border-amber-100 rounded-xl text-xs text-amber-700" data-testid="no-garage-note">
+                Aucun véhicule du garage LOGITRAK n'est lié à ce traceur. Pour activer la synchronisation photo/fiche,
+                associez le traceur dans la fiche véhicule de la plateforme GPS (champ « Traceur »).
+              </div>
+            )}
+            <EditableSection title="Gestion interne" subtitle="Champs propres à LOGITRAK Dashboard" testId="section-general"
+              values={g} onSave={(data) => saveSection("general", data)}
+              fields={[
+                ...(gv ? [] : [
+                  { key: "marque", label: "Marque" },
+                  { key: "modele", label: "Modèle" },
+                  { key: "annee", label: "Année" },
+                  { key: "vin", label: "VIN" },
+                ]),
+                { key: "_km", label: "Kilométrage (GPS)", readonly: true, value: fmtKm(vehicle.total_odometer) },
+                { key: "_groupe", label: "Groupe", readonly: true, value: groupName || "—" },
+                { key: "base", label: "Base / Site" },
+                { key: "responsable", label: "Responsable" },
+                { key: "_tracker", label: "Tracker GPS", readonly: true, value: String(tid) },
+                { key: "prochaine_maintenance", label: "Prochaine maintenance", type: "date" },
+                { key: "prochaine_expertise", label: "Prochaine expertise", type: "date" },
+              ]} />
+          </div>
         )}
         {tab === "leasing" && (
           <div className="space-y-3">
@@ -334,14 +394,24 @@ const VehicleSheet = ({ vehicle, record, groupName, onClose, onSaved }) => {
         )}
         {tab === "assurance" && (
           <div className="space-y-3">
-            <div className="flex items-center gap-2"><span className="text-[10px] text-gray-400 uppercase font-semibold">Échéance :</span><Badge date={(record.assurance || {}).date_fin} testId="assurance-badge" /></div>
-            <EditableSection title="Assurance" testId="section-assurance"
+            <div className="flex items-center gap-2"><span className="text-[10px] text-gray-400 uppercase font-semibold">Échéance :</span><Badge date={gv?.liability_insurance_valid_till || (record.assurance || {}).date_fin} testId="assurance-badge" /></div>
+            {gv && (
+              <EditableSection title="Police RC — synchronisée avec le garage LOGITRAK" subtitle="N° de police et validité propagés dans les 2 sens" testId="section-garage-assurance"
+                values={gv} onSave={saveGarage}
+                fields={[
+                  { key: "liability_insurance_policy_number", label: "N° de police (RC)" },
+                  { key: "liability_insurance_valid_till", label: "Valide jusqu'au", type: "date" },
+                ]} />
+            )}
+            <EditableSection title="Assurance — détails internes" testId="section-assurance"
               values={record.assurance || {}} onSave={(data) => saveSection("assurance", data)}
               fields={[
                 { key: "compagnie", label: "Compagnie" },
-                { key: "police_no", label: "N° de police" },
+                ...(gv ? [] : [
+                  { key: "police_no", label: "N° de police" },
+                  { key: "date_fin", label: "Fin", type: "date" },
+                ]),
                 { key: "date_debut", label: "Début", type: "date" },
-                { key: "date_fin", label: "Fin", type: "date" },
                 { key: "couverture", label: "Type de couverture" },
                 { key: "franchise", label: "Franchise (CHF)", type: "number" },
                 { key: "notes", label: "Notes" },
@@ -375,6 +445,18 @@ export const VehiclesTab = ({ data }) => {
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
   const [groups, setGroups] = useState([]);
+  const [garage, setGarage] = useState({ linked: {}, unlinked: [], ok: false });
+  const [syncing, setSyncing] = useState(false);
+
+  const fetchGarage = useCallback(async () => {
+    setSyncing(true);
+    try {
+      const res = await api.get(`${API}/vehicles/admin/navixy-garage`);
+      if (res.data.success) setGarage({ linked: res.data.linked || {}, unlinked: res.data.unlinked || [], ok: true });
+      else setGarage(g => ({ ...g, ok: false }));
+    } catch { setGarage(g => ({ ...g, ok: false })); }
+    setSyncing(false);
+  }, []);
 
   const vehicles = stats?.vehicles || [];
   const groupIdByTid = useMemo(() => {
@@ -388,21 +470,33 @@ export const VehiclesTab = ({ data }) => {
     api.get(`${API}/vehicles/admin`).then(res => { if (res.data.success) setRecords(res.data.records || {}); })
       .catch(() => {}).finally(() => setLoading(false));
     api.get(`${API}/groups`).then(res => { if (res.data.success) setGroups(res.data.groups || []); }).catch(() => {});
-  }, []);
+    fetchGarage();
+  }, [fetchGarage]);
 
   const onSaved = useCallback((tid, record) => {
     setRecords(prev => ({ ...prev, [String(tid)]: record }));
   }, []);
 
+  const onGarageSaved = useCallback((tid, vehicle) => {
+    setGarage(prev => ({ ...prev, linked: { ...prev.linked, [String(tid)]: vehicle } }));
+  }, []);
+
   const rows = useMemo(() => {
     return vehicles
-      .filter(v => !search || v.label.toLowerCase().includes(search.toLowerCase()))
+      .filter(v => {
+        if (!search) return true;
+        const q = search.toLowerCase();
+        const gv = garage.linked[String(v.tracker_id)];
+        return v.label.toLowerCase().includes(q)
+          || (gv?.reg_number || "").toLowerCase().includes(q)
+          || (gv?.model || "").toLowerCase().includes(q);
+      })
       .map(v => {
         const rec = records[String(v.tracker_id)] || { general: {}, leasing: {}, assurance: {}, controles: [], etat_des_lieux: [], documents: [] };
         return { ...v, rec };
       })
       .sort((a, b) => a.label.localeCompare(b.label));
-  }, [vehicles, records, search]);
+  }, [vehicles, records, search, garage.linked]);
 
   const emptyRec = { general: {}, leasing: {}, assurance: {}, carte_grise: {}, controles: [], etat_des_lieux: [], documents: [] };
 
@@ -418,6 +512,24 @@ export const VehiclesTab = ({ data }) => {
           <input type="text" placeholder="Rechercher…" value={search} onChange={e => setSearch(e.target.value)}
             className="pl-9 pr-3 py-2 text-xs bg-white border border-gray-200 rounded-lg focus:outline-none w-56" data-testid="vehicles-search" />
         </div>
+      </div>
+
+      {/* Bannière synchro garage */}
+      <div className="flex items-center gap-3 px-4 py-3 bg-[#111] rounded-xl text-white" data-testid="garage-sync-banner">
+        <div className={`w-2 h-2 rounded-full ${garage.ok ? "bg-emerald-400" : "bg-red-400"}`} />
+        <div className="text-xs">
+          <span className="font-semibold">Garage LOGITRAK</span>
+          <span className="text-white/60 ml-2">
+            {garage.ok
+              ? `${Object.keys(garage.linked).length}/${vehicles.length} véhicules liés · photos & fiches synchronisées dans les 2 sens`
+              : "connexion au garage indisponible"}
+          </span>
+        </div>
+        <button onClick={fetchGarage} disabled={syncing}
+          className="ml-auto flex items-center gap-1.5 px-3 py-1.5 text-[11px] font-medium bg-white/10 hover:bg-white/20 rounded-lg transition-colors"
+          data-testid="garage-sync-btn">
+          <RefreshCw size={12} className={syncing ? "animate-spin" : ""} />Synchroniser
+        </button>
       </div>
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-x-auto" data-testid="vehicles-admin-table">
@@ -438,23 +550,28 @@ export const VehiclesTab = ({ data }) => {
               <tr><td colSpan={7} className="px-4 py-10 text-center text-xs text-gray-400"><Loader2 size={16} className="animate-spin inline mr-2" />Chargement des fiches…</td></tr>
             ) : rows.map(v => {
               const g = v.rec.general || {};
-              const marqueModele = [g.marque, g.modele].filter(Boolean).join(" ");
+              const gv = garage.linked[String(v.tracker_id)];
+              const subline = gv ? [gv.reg_number, gv.model].filter(Boolean).join(" · ") : ([g.marque, g.modele].filter(Boolean).join(" ") || cleanDeviceLabel(v.model));
               return (
                 <tr key={v.tracker_id} className="border-b border-gray-50 hover:bg-gray-50 cursor-pointer transition-colors"
                   onClick={() => setSelected(v.tracker_id)} data-testid={`vehicle-admin-row-${v.tracker_id}`}>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
-                      <div className="w-9 h-9 rounded-lg bg-gray-50 border border-gray-200 flex items-center justify-center shrink-0"><Truck size={15} className="text-gray-400" /></div>
+                      {gv?.avatar_url ? (
+                        <img src={gv.avatar_url} alt={v.label} className="w-14 h-10 object-cover rounded-lg border border-gray-200 shrink-0" data-testid={`vehicle-photo-${v.tracker_id}`} />
+                      ) : (
+                        <div className="w-14 h-10 rounded-lg bg-gray-50 border border-gray-200 flex items-center justify-center shrink-0"><Truck size={15} className="text-gray-400" /></div>
+                      )}
                       <div>
                         <div className="font-medium text-gray-900">{v.label}</div>
-                        <div className="text-[10px] text-gray-400">{marqueModele || v.model}</div>
+                        <div className="text-[10px] text-gray-400">{subline}</div>
                       </div>
                     </div>
                   </td>
                   <td className="px-4 py-3 text-xs text-gray-600 tabular-nums">{fmtKm(v.total_odometer)}</td>
                   <td className="px-4 py-3 text-xs text-gray-600">{g.responsable || <span className="text-gray-300">—</span>}</td>
                   <td className="px-4 py-3"><Badge date={(v.rec.leasing || {}).date_fin} testId={`badge-leasing-${v.tracker_id}`} /></td>
-                  <td className="px-4 py-3"><Badge date={(v.rec.assurance || {}).date_fin} testId={`badge-assurance-${v.tracker_id}`} /></td>
+                  <td className="px-4 py-3"><Badge date={gv?.liability_insurance_valid_till || (v.rec.assurance || {}).date_fin} testId={`badge-assurance-${v.tracker_id}`} /></td>
                   <td className="px-4 py-3"><Badge date={nextControle(v.rec.controles)} testId={`badge-controle-${v.tracker_id}`} /></td>
                   <td className="px-2 py-3"><ChevronRight size={14} className="text-gray-300" /></td>
                 </tr>
@@ -469,7 +586,7 @@ export const VehiclesTab = ({ data }) => {
 
       <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 rounded-xl border border-gray-200">
         <span className="w-2 h-2 rounded-full bg-emerald-500" />
-        <span className="text-[10px] text-gray-500">Kilométrage et tracker = données GPS réelles LOGITRAK. Champs administratifs (leasing, assurance, contrôles, documents) = saisie manuelle stockée LOGITRAK. Échéances : rouge = échu · orange &lt; 30 j · vert sinon.</span>
+        <span className="text-[10px] text-gray-500">Kilométrage et tracker = données GPS réelles. Identité véhicule, plaque, VIN, assurance RC et photo = garage LOGITRAK, synchronisés dans les 2 sens à chaque chargement. Leasing, contrôles, état des lieux, documents = saisie LOGITRAK Dashboard. Échéances : rouge = échu · orange &lt; 30 j · vert sinon.</span>
       </div>
 
       {selected && (() => {
@@ -479,8 +596,9 @@ export const VehiclesTab = ({ data }) => {
           <>
             <div className="fixed inset-0 bg-black/20 z-40" onClick={() => setSelected(null)} />
             <VehicleSheet vehicle={v} record={records[String(selected)] || emptyRec}
+              garageVehicle={garage.linked[String(selected)] || null}
               groupName={groupTitle[groupIdByTid[selected]]}
-              onClose={() => setSelected(null)} onSaved={onSaved} />
+              onClose={() => setSelected(null)} onSaved={onSaved} onGarageSaved={onGarageSaved} />
           </>
         );
       })()}

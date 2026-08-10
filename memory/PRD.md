@@ -88,6 +88,21 @@ Vue generale | Analyse flotte | Conducteurs | Vehicules | Couts | IoT | (Audit v
 - Cache tenant 300s (1ere generation 5-45s)
 - Tests: iteration_10.json — 100% backend (9/9) + 100% frontend
 
+## Synchronisation Garage (iter 14) — BIDIRECTIONNELLE
+- Source commune = garage plateforme GPS (vehicle/list|read|update|avatar/upload) — UI dit "garage LOGITRAK"
+- Correspondance par tracker_id (3 lies: 781479 Audi/164367, 3076994 Skoda, 3131157 Toyota; 5 non lies)
+- Champs 2 sens: nom, modele, plaque, VIN, annee, couleur, assurance RC (n° police + valide jusqu'au), PHOTO
+- Pull auto a chaque chargement page Vehicules + bouton Synchroniser (banniere noire, pastille verte)
+- Push: edition fiche → PUT /api/vehicles/admin/navixy-garage/{vehicle_id} (read-merge-update complet)
+- Photo: upload via fiche (hover camera) → vehicle/avatar/upload → URL statique publique {api}/static/vehicle/avatars/{fn}
+- Champs internes Mongo NON synchronises: leasing, responsable, base, controles, etat des lieux, documents
+- Badge assurance liste/fiche: date garage prioritaire, fallback Mongo
+- White-label: cleanDeviceLabel() masque 'navixy' dans les modeles traceurs (VehiclesTab + AnalyseFlotteTab)
+- ATTENTION: pas d'endpoint delete avatar — la photo test (carre bleu) sur l'Audi doit etre remplacee par l'utilisateur
+- LEÇON: verifier les fins de fichier apres gros search_replace (2 fois du code residuel a casse la compilation)
+- Tests: iteration_14.json — backend 100% (6/6, restaurations donnees reelles OK); 3 bugs ligne corriges
+  post-rapport et verifies par screenshot cible (photo, sous-ligne plaque, badge garage, leak white-label)
+
 ## Onglet Vehicules — MODULE ADMINISTRATIF (iter 13)
 - Liste type "Documents": plaque + marque/modele, km GPS reels (total_odometer), responsable,
   badges echeances Leasing/Assurance/Controle (rouge=echu, orange<30j, vert sinon, gris si vide)

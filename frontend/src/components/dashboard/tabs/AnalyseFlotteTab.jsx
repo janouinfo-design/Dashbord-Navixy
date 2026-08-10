@@ -24,6 +24,7 @@ const utilTextCls = (p) => p <= 0 ? 'text-gray-400' : p < 30 ? 'text-red-600' : 
 const DN_FULL = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
 const MOIS = ['janvier', 'fevrier', 'mars', 'avril', 'mai', 'juin', 'juillet', 'aout', 'septembre', 'octobre', 'novembre', 'decembre'];
 const DN = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
+const cleanDeviceLabel = (s) => (s || "").replace(/navixy/gi, "").replace(/__+/g, "_").replace(/^_+|_+$/g, "");
 
 // ═══ Tooltip helper ═══
 const Tip = ({ label, def, children }) => {
@@ -588,7 +589,7 @@ export const AnalyseFlotteTab = ({ data, fromDate, toDate }) => {
                   return (
                     <tr key={v.tracker_id} className="border-b border-gray-50 hover:bg-gray-50/60 cursor-pointer transition-colors"
                       onClick={() => setSelectedVehicle(v)} data-testid={`analyse-row-${v.tracker_id}`}>
-                      <td className="px-3 py-2.5"><div className="text-sm font-medium text-gray-900 truncate max-w-[160px]">{v.label}</div><div className="text-[10px] text-gray-400">{v.model}</div></td>
+                      <td className="px-3 py-2.5"><div className="text-sm font-medium text-gray-900 truncate max-w-[160px]">{v.label}</div><div className="text-[10px] text-gray-400">{cleanDeviceLabel(v.model)}</div></td>
                       <td className="px-3 py-2.5">
                         <div className="flex items-center gap-2">
                           <div className="w-14 h-2 bg-gray-100 rounded-full overflow-hidden"><div className="h-full rounded-full" style={{ width: `${Math.min(100, v.utilization_pct)}%`, backgroundColor: utilBarColor(v.utilization_pct) }} /></div>
