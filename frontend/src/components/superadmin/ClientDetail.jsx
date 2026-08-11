@@ -9,6 +9,7 @@ import UsersSection from "./UsersSection";
 const SECTIONS = [
   { id: "overview", label: "Vue générale" },
   { id: "users", label: "Utilisateurs" },
+  { id: "access", label: "Lien d'accès" },
   { id: "navixy", label: "Connexion Navixy" },
   { id: "modules", label: "Modules" },
   { id: "activity", label: "Activité" },
@@ -35,6 +36,8 @@ export default function ClientDetail() {
   const [newHash, setNewHash] = useState("");
   const [testResult, setTestResult] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [accessUrl, setAccessUrl] = useState(null);
+  const [accessMode, setAccessMode] = useState("edit");
 
   const load = useCallback(async () => {
     try {
@@ -155,6 +158,59 @@ export default function ClientDetail() {
       )}
 
       {tab === "users" && <UsersSection clientId={c.id} users={data.users} onChanged={load} />}
+
+      {tab === "access" && (
+        <Card className="p-5 space-y-4" data-testid="sa-detail-access">
+          <p className="text-sm text-gray-600">
+            Le lien d'accès permet au client d'ouvrir son dashboard <strong>sans login</strong> (ex. intégré dans son panneau Navixy).
+            Le jeton est stocké haché, révocable à tout moment. La clé Navixy n'est jamais exposée au navigateur.
+          </p>
+          {data.access_link ? (
+            <div className="flex flex-wrap items-center gap-3 text-sm bg-gray-50 rounded-lg p-3" data-testid="sa-access-status">
+              <span className="px-2 py-0.5 rounded-full text-[11px] font-medium bg-emerald-50 text-emerald-700 border border-emerald-200">Lien actif</span>
+              <span className="text-gray-600">Mode : <strong>{data.access_link.access_mode === "edit" ? "Consultation + édition" : "Lecture seule"}</strong></span>
+              <span className="text-xs text-gray-400">Créé le {fmtDateTime(data.access_link.created_at)}</span>
+              <span className="text-xs text-gray-400">Dernier accès : {fmtDateTime(data.access_link.last_used_at)}</span>
+            </div>
+          ) : (
+            <p className="text-sm text-gray-400" data-testid="sa-access-none">Aucun lien actif pour ce client.</p>
+          )}
+          {accessUrl && (
+            <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm" data-testid="sa-access-url-box">
+              <p className="font-medium text-amber-800 mb-2">Lien affiché une seule fois — copiez-le maintenant</p>
+              <div className="flex items-center gap-2">
+                <code className="text-xs bg-white border border-amber-200 rounded px-2 py-1.5 break-all flex-1" data-testid="sa-access-url">{accessUrl}</code>
+                <button onClick={() => { navigator.clipboard?.writeText(accessUrl); setNotice("Lien copié"); }}
+                  className="border border-amber-300 text-amber-800 rounded-lg px-3 py-1.5 text-xs hover:bg-amber-100" data-testid="sa-access-copy-btn">Copier</button>
+              </div>
+            </div>
+          )}
+          <div className="flex flex-wrap items-center gap-2">
+            <select value={accessMode} onChange={(e) => setAccessMode(e.target.value)}
+              className="text-sm border border-gray-200 rounded-lg px-3 py-2 bg-white" data-testid="sa-access-mode-select">
+              <option value="edit">Consultation + édition</option>
+              <option value="read">Lecture seule</option>
+            </select>
+            <button onClick={() => run(async () => {
+              const r = await api.post(`${API}/admin/clients/${c.id}/access-link`, { access_mode: accessMode });
+              setAccessUrl(r.data.url);
+            }, "Nouveau lien généré — l'ancien est révoqué")}
+              disabled={busy}
+              className="text-white rounded-lg px-4 py-2 text-sm font-medium disabled:opacity-50" style={{ background: "#1e6ae5" }}
+              data-testid="sa-access-generate-btn">
+              {data.access_link ? "Régénérer le lien" : "Générer le lien"}
+            </button>
+            {data.access_link && (
+              <button onClick={() => run(async () => { await api.delete(`${API}/admin/clients/${c.id}/access-link`); setAccessUrl(null); }, "Lien révoqué")}
+                disabled={busy}
+                className="border border-red-200 text-red-600 hover:bg-red-50 rounded-lg px-4 py-2 text-sm disabled:opacity-50"
+                data-testid="sa-access-revoke-btn">
+                Révoquer
+              </button>
+            )}
+          </div>
+        </Card>
+      )}
 
       {tab === "navixy" && (
         <Card className="p-5 space-y-4" data-testid="sa-detail-navixy">

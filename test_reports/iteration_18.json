@@ -1,0 +1,42 @@
+{
+  "summary": "Phase 2.2 (Lien d'accès direct tenant) validée. Backend pytest 27/28 (test_access_link.py) : création lien edit/read, accès public /api/access/{token} pose cookies httpOnly, /me renvoie MANAGER ou READ_ONLY + tenant_id + via_link=true, isolation (flows filtré, /api/admin/clients=403, X-Act-As-Tenant ignoré pour link user), écriture 403 en mode read, révocation (session existante 401, réutilisation token 404, refresh révoqué 401), token bidon 404, client suspendu → lien 403 (test-alpha suspendu puis RÉACTIVÉ), /api/auth/change-password sur session lien = 403, mongo tenant_access_tokens ne contient que token_hash sha256 (64 hex) — aucun token en clair, audit_log contient ACCESS_LINK_CREATED/USED/REVOKED. Frontend Playwright complet : SUPER_ADMIN → fiche TEST Beta → onglet 'Lien d'accès' (sa-detail-tab-access) → statut 'Aucun lien' (sa-access-none) → sélecteur mode (sa-access-mode-select) 'edit' → bouton Générer (sa-access-generate-btn) → URL https://test-beta.logitrak.ch/access/<token> affichée dans sa-access-url + bouton Copier fonctionnel → statut passe à 'Lien actif' (sa-access-status) ; nouvelle session navigateur sur /access/<token> → PAS de /login, redirection vers / avec dashboard-layout, aucun bouton logout ni email dans le header (via_link) ; /access/invalid_bogus_token → data-testid access-error 'Lien d'accès invalide ou révoqué' sans crash ; Révoquer (sa-access-revoke-btn) → statut repasse à 'Aucun lien'. Tenants test-alpha et test-beta laissés ACTIFS.",
+  "backend_issues": {
+    "critical": [
+      {"endpoint": "POST /api/auth/refresh", "issue": "Refresh échoue (401 'Utilisateur introuvable ou désactivé') pour toute session issue d'un lien d'accès actif. Cause : auth.py L358 fait db.users.find_one({id: payload.sub}) mais le sub d'une session lien est 'link:<uuid>' qui n'existe pas dans la collection users. Impact : les dashboards clients ouverts via /access/<token> vont être déconnectés au premier refresh (durée access token = 480 min, mais tout appel après ExpiredSignatureError ne pourra pas régénérer). Fix suggéré : dans refresh(), si payload['sub'].startswith('link:'), résoudre via db.tenant_access_tokens.find_one({id: sub[5:], revoked: false}) et émettre le nouveau token via _virtual_link_user(link), comme dans get_current_user (L149-153).", "priority": "HIGH"}
+    ],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_access_link.py",
+    "/app/test_reports/pytest/access_link.xml"
+  ],
+  "action_items": [
+    "BACKEND: patcher /api/auth/refresh pour supporter les sessions issues d'un lien d'accès (sub commençant par 'link:'). Sans ce fix, tout dashboard client ouvert via lien sera invalidé au bout de 480 min et impossible à réactiver sans rouvrir le lien /access/<token>."
+  ],
+  "critical_code_review_comments": [
+    "auth.py L149-157 get_current_user gère bien link:<id> — mais L358 refresh ne l'a pas répliqué : incohérence de conception, la refresh rotation ne s'applique pas aux sessions lien.",
+    "server.py L232 /api/access/{token} : le lookup est bien fait sur token_hash (sha256) — aucun token en clair persisté, conforme à la spec.",
+    "super_admin.py L400-401 : régénération d'un lien révoque bien tous les liens actifs du même tenant via update_many — atomicité OK.",
+    "auth.py L128 _virtual_link_user : role 'MANAGER' pour edit, 'READ_ONLY' pour tout autre — cohérent avec require_user L167 qui bloque les non-GET pour READ_ONLY.",
+    "ClientDetail.jsx onglet access : URL affichée une seule fois (state local accessUrl), bouton Copier via navigator.clipboard — pas de persistance côté frontend, OK sécurité.",
+    "AccessPage.jsx : après succès, window.location.replace('/') — bonne pratique (évite l'historique) ; en erreur, data-testid access-error affiché sans crash."
+  ],
+  "updated_files": [
+    "/app/backend/tests/test_access_link.py"
+  ],
+  "success_rate": {
+    "backend": "96% (27/28 pytest test_access_link.py — 1 échec = bug refresh link session)",
+    "frontend": "100% (SA UI génération/révocation lien, /access/<token> → dashboard direct sans login ni logout ni email, /access/invalid → access-error)"
+  },
+  "seed_data_creation": "Créé et révoqué en fin de test : 3 liens d'accès (test-beta edit, test-beta read, test-alpha edit). Tous révoqués. Aucun flow persistant (TEST_LINK_flow créé puis supprimé). test-alpha suspendu puis RÉACTIVÉ. test-beta et test-alpha restent is_active=true à la fin.",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "test_credentials": "SUPER_ADMIN admin@logitrak.ch / LT!u4qv8ibtN21iOHDz — voir /app/memory/test_credentials.md",
+  "context_for_next_testing_agent": "Phase 2.2 lien d'accès validée à 96% (backend) + 100% (frontend). Un seul bug ouvert : /api/auth/refresh KO sur sessions lien (auth.py L358). Une fois patché, relancer test_link_session_refresh_ok. Fichier de régression : /app/backend/tests/test_access_link.py (28 tests, ~4 s). Selectors frontend confirmés : sa-detail-tab-access, sa-access-status, sa-access-none, sa-access-mode-select, sa-access-generate-btn, sa-access-url, sa-access-copy-btn, sa-access-revoke-btn, dashboard-layout, access-error. Le format d'URL généré est https://<subdomain>.logitrak.ch/access/<token> — en preview il faut extraire le token et l'appliquer sur REACT_APP_BACKEND_URL.",
+  "rca_of_the_issue": "Racine du bug refresh link : lorsqu'un utilisateur virtuel de lien (id='link:<uuid>') possède un JWT refresh valide, le endpoint /api/auth/refresh (auth.py L358) suppose que payload['sub'] est un user Mongo et fait un find_one({id: sub}) direct — retourne None → 401. get_current_user (L149-153) gère correctement ce cas via find_one dans tenant_access_tokens. Reproduction : POST /api/admin/clients/{beta}/access-link {access_mode:'edit'} → GET /api/access/<token> (cookies posés) → POST /api/auth/refresh → 401. Mitigation : dupliquer dans refresh la branche 'link:' de get_current_user avant le lookup users."
+}

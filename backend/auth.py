@@ -122,6 +122,13 @@ def _sanitize(user: dict) -> dict:
 
 # ---------- Dépendances ----------
 
+def _virtual_link_user(link: dict) -> dict:
+    return {"id": f"link:{link['id']}", "email": f"acces-direct@{link['tenant']}",
+            "first_name": "Accès", "last_name": "Direct",
+            "role": "MANAGER" if link.get("access_mode") == "edit" else "READ_ONLY",
+            "tenant_id": link["tenant"], "is_active": True, "via_link": True}
+
+
 async def get_current_user(request: Request, db) -> dict:
     token = request.cookies.get("access_token")
     if not token:
@@ -138,7 +145,13 @@ async def get_current_user(request: Request, db) -> dict:
         raise HTTPException(status_code=401, detail="Jeton invalide")
     if payload.get("type") != "access":
         raise HTTPException(status_code=401, detail="Type de jeton invalide")
-    user = await db.users.find_one({"id": payload["sub"]}, {"_id": 0})
+    sub = payload["sub"]
+    if sub.startswith("link:"):
+        link = await db.tenant_access_tokens.find_one({"id": sub[5:], "revoked": False})
+        if not link:
+            raise HTTPException(status_code=401, detail="Lien d'accès révoqué")
+        return _virtual_link_user(link)
+    user = await db.users.find_one({"id": sub}, {"_id": 0})
     if not user or not user.get("is_active", True):
         raise HTTPException(status_code=401, detail="Utilisateur introuvable ou désactivé")
     return user
@@ -180,6 +193,11 @@ def require_role(*roles):
             raise HTTPException(status_code=401, detail="Non authentifié")
         if user.get("role") not in roles:
             raise HTTPException(status_code=403, detail="Accès refusé — rôle insuffisant")
+        if "SUPER_ADMIN" in roles:
+            admin_host = os.environ.get("ADMIN_HOST")
+            if admin_host and request.headers.get("host", "").split(":")[0] != admin_host:
+                raise HTTPException(status_code=403,
+                                    detail=f"Espace Super Admin accessible uniquement via https://{admin_host}")
         return user
     return dep
 
@@ -220,6 +238,8 @@ async def seed_and_migrate(db):
     await db.sessions.create_index("jti", unique=True)
     await db.sessions.create_index("user_id")
     await db.sessions.create_index("expires_at", expireAfterSeconds=0)
+    await db.tenant_access_tokens.create_index("token_hash", unique=True)
+    await db.tenant_access_tokens.create_index("tenant")
 
     await db.flows.update_many({"tenant": {"$exists": False}}, {"$set": {"tenant": "default"}})
 
@@ -335,9 +355,16 @@ def create_auth_router(db) -> APIRouter:
             await audit_event(db, "-", "REFRESH_REUSE_DETECTED", sess["user_id"])
             raise HTTPException(status_code=401, detail="Jeton déjà utilisé — sessions révoquées")
 
-        user = await db.users.find_one({"id": payload["sub"]}, {"_id": 0})
-        if not user or not user.get("is_active", True):
-            raise HTTPException(status_code=401, detail="Utilisateur introuvable ou désactivé")
+        sub = payload["sub"]
+        if sub.startswith("link:"):
+            link = await db.tenant_access_tokens.find_one({"id": sub[5:], "revoked": False})
+            if not link:
+                raise HTTPException(status_code=401, detail="Lien d'accès révoqué")
+            user = _virtual_link_user(link)
+        else:
+            user = await db.users.find_one({"id": sub}, {"_id": 0})
+            if not user or not user.get("is_active", True):
+                raise HTTPException(status_code=401, detail="Utilisateur introuvable ou désactivé")
 
         # Rotation : ancien jeton révoqué, nouveau émis
         await db.sessions.update_one({"jti": payload["jti"]}, {"$set": {
@@ -349,6 +376,8 @@ def create_auth_router(db) -> APIRouter:
     @router.post("/change-password")
     async def change_password(body: ChangePasswordInput, request: Request, response: Response):
         user = await get_current_user(request, db)
+        if user["id"].startswith("link:"):
+            raise HTTPException(status_code=403, detail="Non disponible pour un accès par lien")
         if not verify_password(body.current_password, user["password_hash"]):
             raise HTTPException(status_code=401, detail="Mot de passe actuel incorrect")
         if len(body.new_password) < 8:

@@ -212,6 +212,19 @@ Vue generale | Analyse flotte | Conducteurs | Vehicules | Couts | IoT | (Audit v
 1. Carte temps reel (module 'carte' a ajouter au registre MODULES)
 2. Alertes echeances email
 3. Logo/branding par client
+
+- [x] **Phase 2.2 Correction architecture — acces client sans login** (2026-06, iteration_18 — backend 28/28 pytest + frontend 100%):
+  - Lien d'acces tenant signe: token 256 bits urlsafe, stocke HACHE sha256 (tenant_access_tokens), sans expiration, revocable, regeneration revoque l'ancien
+  - GET /api/access/{token} (public): valide token + client actif + host (si sous-domaine prod), pose les cookies httpOnly (session refresh rotative), audit ACCESS_LINK_USED avec IP
+  - Utilisateur virtuel 'link:<id>': access_mode 'edit' → role MANAGER, 'read' → READ_ONLY — tout le RBAC/modules/suspension/isolation existant s'applique ; change-password interdit ; revocation = 401 immediat (verif du lien a chaque requete + au refresh)
+  - Super Admin: fiche client onglet 'Lien d'acces' (generer/copier une fois/revoquer/mode) ; endpoints POST|DELETE /api/admin/clients/{id}/access-link ; audit ACCESS_LINK_CREATED/REVOKED
+  - ADMIN_HOST (env, optionnel — production): tous les endpoints SUPER_ADMIN → 403 hors de ce host ; inactif en preview ; ajoute au docker-compose (${ADMIN_HOST:-})
+  - Frontend: route publique /access/:token (AccessPage), header sans logout/email pour via_link
+  - Usage prod: le lien remplace l'URL nue dans le panneau Navixy white-label (login.logitrak.fr) — le client entre sans login, cle Navixy jamais exposee
+  - Clarification auditee: Techlift n'a jamais eu de privileges — le Super Admin est global (/super-admin), le login vu sur techlift.logitrak.ch etait le formulaire generique brande
+  - Fichiers: backend/{auth.py,server.py,super_admin.py,docker-compose.yml}, frontend/{components/auth/AccessPage.jsx(nouveau),App.js,superadmin/ClientDetail.jsx,layout/Header.jsx}
+  - Tests regression: /app/backend/tests/test_access_link.py (28 tests)
+  - Bug corrige post-test: refresh des sessions lien (branche 'link:' dans /auth/refresh) — re-teste 28/28
 - [ ] Integration Baubit (P2)
 - [ ] Responsive mobile/tablette complet (P2)
 - [ ] Auto-refresh (P2)

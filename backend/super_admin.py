@@ -3,6 +3,7 @@ import re
 import uuid
 import shutil
 import secrets
+import hashlib
 import asyncio
 from datetime import datetime, timezone
 from typing import Optional, List
@@ -81,6 +82,10 @@ class ImpersonationStart(BaseModel):
 
 class ImpersonationEnd(BaseModel):
     log_id: str
+
+
+class AccessLinkCreate(BaseModel):
+    access_mode: str = "edit"
 
 
 def create_super_admin_router(db, navixy, cache) -> APIRouter:
@@ -253,8 +258,11 @@ def create_super_admin_router(db, navixy, cache) -> APIRouter:
         users = await db.users.find({"tenant_id": tenant}, {"_id": 0, "password_hash": 0}).to_list(500)
         navixy_st = await _navixy_status(tenant, client.get("navixy_hash", ""))
         sync = await db.tenant_sync.find_one({"tenant": tenant}, {"_id": 0})
+        access_link = await db.tenant_access_tokens.find_one(
+            {"tenant": tenant, "revoked": False}, {"_id": 0, "token_hash": 0})
         return {"success": True, "client": _mask(client), "tenant": tenant,
                 "users": users, "navixy": navixy_st,
+                "access_link": access_link,
                 "last_sync_at": (sync or {}).get("last_sync_at")}
 
     @router.get("/clients/{client_id}/activity")
@@ -379,6 +387,37 @@ def create_super_admin_router(db, navixy, cache) -> APIRouter:
         cache.invalidate_tenant(tenant)
         await _audit(tenant, "modules_updated", request.state.user["email"], str(body.modules))
         return {"success": True, "modules": body.modules}
+
+    # ---------- Lien d'accès direct tenant ----------
+
+    @router.post("/clients/{client_id}/access-link")
+    async def create_access_link(client_id: str, body: AccessLinkCreate, request: Request):
+        client = await _get_client(client_id)
+        tenant = _tenant_of(client)
+        if body.access_mode not in ("edit", "read"):
+            raise HTTPException(status_code=400, detail="Mode invalide : 'edit' ou 'read'")
+        token = secrets.token_urlsafe(32)
+        await db.tenant_access_tokens.update_many(
+            {"tenant": tenant, "revoked": False}, {"$set": {"revoked": True}})
+        await db.tenant_access_tokens.insert_one({
+            "id": str(uuid.uuid4()), "tenant": tenant,
+            "token_hash": hashlib.sha256(token.encode()).hexdigest(),
+            "access_mode": body.access_mode, "created_at": _now(),
+            "created_by": request.state.user["email"], "revoked": False, "last_used_at": None,
+        })
+        await _audit(tenant, "ACCESS_LINK_CREATED", request.state.user["email"], f"mode={body.access_mode}")
+        return {"success": True, "access_mode": body.access_mode,
+                "url": f"https://{client['subdomain']}.logitrak.ch/access/{token}",
+                "note": "Lien affiché une seule fois — l'ancien lien est révoqué."}
+
+    @router.delete("/clients/{client_id}/access-link")
+    async def revoke_access_link(client_id: str, request: Request):
+        client = await _get_client(client_id)
+        tenant = _tenant_of(client)
+        r = await db.tenant_access_tokens.update_many(
+            {"tenant": tenant, "revoked": False}, {"$set": {"revoked": True}})
+        await _audit(tenant, "ACCESS_LINK_REVOKED", request.state.user["email"])
+        return {"success": True, "revoked": r.modified_count}
 
     # ---------- Impersonation (aperçu client) ----------
 

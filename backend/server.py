@@ -2,7 +2,7 @@
 LOGITRAK Fleet Dashboard — Multi-Client API
 Slim route layer. All computation is delegated to AnalyticsEngine.
 """
-from fastapi import FastAPI, APIRouter, HTTPException, Query, Request, Depends
+from fastapi import FastAPI, APIRouter, HTTPException, Query, Request, Response, Depends
 from fastapi.responses import StreamingResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
@@ -28,6 +28,8 @@ from vehicle_admin import create_vehicle_admin_router
 from auth import (
     make_require_user, require_role, create_auth_router,
     seed_and_migrate, encrypt_hash, decrypt_hash, MODULES,
+    _token_hash, _virtual_link_user, _set_cookies, create_access_token, create_session,
+    audit_event,
 )
 from super_admin import create_super_admin_router
 
@@ -223,6 +225,29 @@ async def get_client_info(request: Request):
         safe = {k: info.get(k) for k in ('name', 'subdomain', 'logo_url', 'primary_color')}
         return {"success": True, "client": safe, "is_multi_tenant": True}
     return {"success": True, "client": {"name": "Default", "primary_color": "#e53935"}, "is_multi_tenant": False}
+
+# ============ ACCÈS DIRECT PAR LIEN TENANT (sans login, clé Navixy jamais exposée) ============
+
+@public_router.get("/access/{token}")
+async def tenant_access(token: str, request: Request, response: Response):
+    link = await db.tenant_access_tokens.find_one({"token_hash": _token_hash(token), "revoked": False})
+    if not link:
+        raise HTTPException(status_code=404, detail="Lien d'accès invalide ou révoqué")
+    client = await db.clients.find_one({"tenant": link["tenant"]}, {"_id": 0, "navixy_hash": 0})
+    if not client or not client.get("is_active", True):
+        raise HTTPException(status_code=403, detail="Client suspendu — contactez LOGITRAK")
+    sub_client = await get_client_from_subdomain(request)
+    if sub_client and (sub_client.get('tenant') or sub_client['subdomain']) != link["tenant"]:
+        raise HTTPException(status_code=403, detail="Ce lien n'est pas valable sur ce domaine")
+    user = _virtual_link_user(link)
+    refresh = await create_session(db, user["id"])
+    _set_cookies(response, create_access_token(user), refresh)
+    ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or \
+        (request.client.host if request.client else None)
+    await db.tenant_access_tokens.update_one(
+        {"id": link["id"]}, {"$set": {"last_used_at": datetime.now(timezone.utc).isoformat()}})
+    await audit_event(db, link["tenant"], "ACCESS_LINK_USED", f"acces-direct@{link['tenant']}", f"IP {ip}")
+    return {"success": True, "tenant": link["tenant"], "client_name": client["name"]}
 
 # ============ TENANT CONTEXT (utilisateur authentifié) ============
 

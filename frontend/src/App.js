@@ -4,6 +4,7 @@ import "@/App.css";
 import { DashboardLayout } from "@/components/dashboard/DashboardLayout";
 import { LoginPage } from "@/components/auth/LoginPage";
 import ChangePasswordPage from "@/components/auth/ChangePasswordPage";
+import AccessPage from "@/components/auth/AccessPage";
 import { AuthProvider, useAuth } from "@/lib/AuthContext";
 import { ImpersonationBanner } from "@/components/shared/ImpersonationBanner";
 import { SuperAdminLayout } from "@/components/superadmin/SuperAdminLayout";
@@ -75,6 +76,7 @@ function App() {
     <BrowserRouter>
       <AuthProvider>
         <Routes>
+          <Route path="/access/:token" element={<AccessPage />} />
           <Route path="/change-password" element={<ChangePasswordGate />} />
           <Route path="/super-admin" element={<RequireSuperAdmin><SuperAdminLayout /></RequireSuperAdmin>}>
             <Route index element={<SuperAdminDashboard />} />

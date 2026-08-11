@@ -87,7 +87,7 @@ export const Header = ({ title, subtitle, onRefresh, lastUpdate, alertCount = 0,
           </button>
         )}
 
-        {user && (
+        {user && !user.via_link && (
           <div className="flex items-center gap-1.5 pl-2 border-l border-gray-200 ml-1">
             <span className="hidden lg:block text-xs text-gray-500 max-w-[160px] truncate" data-testid="header-user-email" title={`${user.email} (${user.role})`}>
               {user.email}
