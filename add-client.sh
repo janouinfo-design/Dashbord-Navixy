@@ -149,19 +149,39 @@ NGINXEOF
 nginx -t && systemctl reload nginx
 echo -e "${GREEN}  Nginx + SSL OK${NC}"
 
-# Creer le client dans le dashboard
+# Creer le client dans le dashboard (ou ignorer s'il existe deja via l'interface Super Admin)
 echo -e "${YELLOW}[4/5] Creation du client dans le dashboard...${NC}"
-CLIENT_RESULT=$(curl -s -X POST "http://127.0.0.1:8005/api/admin/clients" \
-    -H "Content-Type: application/json" \
-    -d "{\"name\":\"$CLIENT_NAME\",\"subdomain\":\"$SUBDOMAIN\",\"navixy_hash\":\"$NAVIXY_HASH\",\"primary_color\":\"$COLOR\"}")
+read -p "Le client a-t-il DEJA ete cree via l'interface Super Admin ? (o/n): " ALREADY
+if [ "$ALREADY" == "o" ]; then
+    echo -e "${GREEN}  Creation ignoree (client deja present)${NC}"
+else
+    read -p "Email SUPER_ADMIN: " SA_EMAIL
+    read -s -p "Mot de passe SUPER_ADMIN: " SA_PASSWORD
+    echo ""
+    COOKIE_JAR=$(mktemp)
+    LOGIN_CODE=$(curl -s -o /dev/null -w "%{http_code}" -c "$COOKIE_JAR" \
+        -X POST "http://127.0.0.1:8005/api/auth/login" \
+        -H "Content-Type: application/json" \
+        -d "{\"email\":\"$SA_EMAIL\",\"password\":\"$SA_PASSWORD\"}")
+    if [ "$LOGIN_CODE" != "200" ]; then
+        echo -e "${RED}ERREUR: authentification SUPER_ADMIN refusee (HTTP $LOGIN_CODE)${NC}"
+        rm -f "$COOKIE_JAR"
+        exit 1
+    fi
+    CLIENT_RESULT=$(curl -s -b "$COOKIE_JAR" -X POST "http://127.0.0.1:8005/api/admin/clients" \
+        -H "Content-Type: application/json" \
+        -d "{\"name\":\"$CLIENT_NAME\",\"subdomain\":\"$SUBDOMAIN\",\"navixy_hash\":\"$NAVIXY_HASH\",\"primary_color\":\"$COLOR\"}")
+    rm -f "$COOKIE_JAR"
 
-CLIENT_SUCCESS=$(echo "$CLIENT_RESULT" | python3 -c "import sys,json;print(json.load(sys.stdin).get('success',False))" 2>/dev/null || echo "False")
+    CLIENT_SUCCESS=$(echo "$CLIENT_RESULT" | python3 -c "import sys,json;print(json.load(sys.stdin).get('success',False))" 2>/dev/null || echo "False")
 
-if [ "$CLIENT_SUCCESS" != "True" ]; then
-    echo -e "${RED}ERREUR: $CLIENT_RESULT${NC}"
-    exit 1
+    if [ "$CLIENT_SUCCESS" != "True" ]; then
+        echo -e "${RED}ERREUR: $CLIENT_RESULT${NC}"
+        exit 1
+    fi
+    echo -e "${GREEN}  Client cree${NC}"
+    echo -e "${YELLOW}  NOTE: pensez a creer l'utilisateur ADMIN du client via l'interface Super Admin (fiche client > Utilisateurs).${NC}"
 fi
-echo -e "${GREEN}  Client cree${NC}"
 
 # Verification finale
 echo -e "${YELLOW}[5/5] Verification finale...${NC}"
