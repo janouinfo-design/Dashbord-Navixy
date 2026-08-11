@@ -102,15 +102,33 @@ class NavixyClient:
                     states[tid] = result.get('state', {})
         return states
 
+    async def _chunked_stats(self, endpoint: str, ids: List[int], base_params: dict, h: str,
+                             chunk: int = 100, result_key: str = "result") -> dict:
+        """Navixy limite ces endpoints (ex: 128 traceurs max) — découpe et fusionne les résultats."""
+        chunks = [ids[i:i + chunk] for i in range(0, len(ids), chunk)]
+        results = await asyncio.gather(*[
+            self.request(endpoint, {**base_params, "trackers": c}, navixy_hash=h) for c in chunks])
+        merged: dict = {}
+        ok = 0
+        for r in results:
+            if r.get('success'):
+                ok += 1
+                merged.update(r.get(result_key, {}) or {})
+        if ok == 0:
+            return results[0] if results else {"success": False}
+        out = {"success": True, result_key: merged}
+        if ok < len(chunks):
+            out["partial"] = True
+            logger.warning(f"Navixy {endpoint}: {len(chunks) - ok}/{len(chunks)} lots en échec — données partielles")
+        return out
+
     async def get_mileage(self, ids: List[int], from_dt: str, to_dt: str, h: str) -> dict:
-        return await self.request("tracker/stats/mileage/read", {
-            "trackers": ids, "from": from_dt, "to": to_dt
-        }, navixy_hash=h)
+        return await self._chunked_stats("tracker/stats/mileage/read",
+                                         ids, {"from": from_dt, "to": to_dt}, h)
 
     async def get_counters(self, ids: List[int], counter_type: str, h: str) -> dict:
-        return await self.request("tracker/counter/value/list", {
-            "trackers": ids, "type": counter_type
-        }, navixy_hash=h)
+        return await self._chunked_stats("tracker/counter/value/list",
+                                         ids, {"type": counter_type}, h, result_key="value")
 
     async def get_groups(self, h: str) -> dict:
         return await self.request("tracker/group/list", navixy_hash=h)

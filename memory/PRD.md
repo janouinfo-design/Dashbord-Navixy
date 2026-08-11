@@ -244,6 +244,11 @@ Vue generale | Analyse flotte | Conducteurs | Vehicules | Couts | IoT | (Audit v
   - Compat navigateurs: Chrome/Edge/Firefox OK, Safari >= 18.4 (CHIPS) — anciens Safari peuvent bloquer, fallback = mode 'Nouvel onglet' dans Navixy
   - Tests obsoletes repares: test_auth_phase2_1.py + test_super_admin_phase2.py utilisaient les anciens mdp temporaires → mis a jour avec test_credentials.md (79/79)
   - Token Techlift expose dans une capture utilisateur → lien a REGENERER apres deploiement
+- [x] **Fix flottes >128 vehicules (Membrez 204 vehicules → 0 km partout)** (2026-06, self-test reel):
+  - Cause: Navixy limite tracker/stats/mileage/read a 128 traceurs/requete → appel unique avec 204 IDs echoue en silence → mileage/odometre/heures moteur a 0 (Techlift 37 OK)
+  - Fix navixy_client.py: _chunked_stats() — decoupe en lots de 100, fusionne les resultats (result_key 'result' pour mileage, 'value' pour counters), flag 'partial' + warning si un lot echoue
+  - Valide sur donnees reelles Techlift preview: chunk=10 == appel unique (17219.6 km, 37 cles identiques) ; odometer 33 cles, engine_hours 27 cles ; endpoint /api/fleet/stats e2e OK (37 veh, 17224 km)
+  - Non couvert: report/tracker/generate (eco-conduite plugin 46) envoie aussi tous les IDs — limite Navixy inconnue, a surveiller sur Membrez onglet Conducteurs
 - [ ] Integration Baubit (P2)
 - [ ] Responsive mobile/tablette complet (P2)
 - [ ] Auto-refresh (P2)
