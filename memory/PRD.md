@@ -235,6 +235,15 @@ Vue generale | Analyse flotte | Conducteurs | Vehicules | Couts | IoT | (Audit v
   - Durcissement minor: /auth/me des sessions lien verifie aussi client.is_active (401 si suspendu)
   - Valide 30/30: URL finale sans token, zero requete posthog, F5/onglets/refresh, edit/read 403, revocation, suspension+reactivation, isolation X-Act-As ignore, Mongo hash-only, non-regression logins
   - IMPORTANT DEPLOIEMENT VPS: regenerer le lien Techlift apres deploiement (ancien format /access/<token> obsolete) + git pull de nginx-dashboard.conf
+- [x] **Support iframe Navixy white-label** (2026-06, self-test — pytest 79/79 + E2E iframe Playwright):
+  - Besoin: le lien d'acces est place dans le panneau Navixy en mode 'Integre' (iframe cross-site) → cookies SameSite=Lax bloques → login affiche
+  - Fix: sessions LIEN uniquement → cookies SameSite=None; Secure; Partitioned (CHIPS) poses par /api/access/{token} ET par /auth/refresh (branche link:) — header Set-Cookie manuel (starlette 0.37 sans param partitioned)
+  - Garde anti-CSRF: pour les sessions via_link, toute methode d'ecriture exige que l'Origin corresponde au host servi (Host OU X-Forwarded-Host, proxy preview reecrit Origin) → 403 'Origine non autorisee' sinon
+  - Logins normaux (super admin, comptes clients) restent SameSite=Lax — inchanges
+  - E2E valide: page externe locale iframant /api/access/<token> → dashboard test-beta rendu SANS login dans l'iframe
+  - Compat navigateurs: Chrome/Edge/Firefox OK, Safari >= 18.4 (CHIPS) — anciens Safari peuvent bloquer, fallback = mode 'Nouvel onglet' dans Navixy
+  - Tests obsoletes repares: test_auth_phase2_1.py + test_super_admin_phase2.py utilisaient les anciens mdp temporaires → mis a jour avec test_credentials.md (79/79)
+  - Token Techlift expose dans une capture utilisateur → lien a REGENERER apres deploiement
 - [ ] Integration Baubit (P2)
 - [ ] Responsive mobile/tablette complet (P2)
 - [ ] Auto-refresh (P2)

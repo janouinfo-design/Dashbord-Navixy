@@ -20,9 +20,9 @@ BASE_URL = base_url.rstrip("/")
 # ---------- Credentials ----------
 CREDS = {
     "super": ("admin@logitrak.ch", "LT!u4qv8ibtN21iOHDz"),
-    "alpha_admin": ("admin@test-alpha.local", "LT-VDeynr1vKp3X9w"),
-    "alpha_ro": ("ro@test-alpha.local", "LT-zHgQNKU2O7JuDQ"),
-    "beta_admin": ("admin@test-beta.local", "LT-Gm3aCzayNgXf5A"),
+    "alpha_admin": ("admin@test-alpha.local", "Alpha2026!admin"),
+    "alpha_ro": ("ro@test-alpha.local", "Alpha2026!readonly"),
+    "beta_admin": ("admin@test-beta.local", "Beta2026!admin"),
 }
 
 

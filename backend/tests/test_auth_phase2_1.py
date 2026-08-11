@@ -18,8 +18,8 @@ MONGO_URL = backend_env.get("MONGO_URL") or os.environ.get("MONGO_URL")
 DB_NAME = backend_env.get("DB_NAME") or os.environ.get("DB_NAME")
 
 SUPER = ("admin@logitrak.ch", "LT!u4qv8ibtN21iOHDz")
-BETA_ADMIN = ("admin@test-beta.local", "LT-Gm3aCzayNgXf5A")
-ALPHA_ADMIN = ("admin@test-alpha.local", "LT-VDeynr1vKp3X9w")
+BETA_ADMIN = ("admin@test-beta.local", "Beta2026!admin")
+ALPHA_ADMIN = ("admin@test-alpha.local", "Alpha2026!admin")
 
 
 @pytest.fixture(scope="module")

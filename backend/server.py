@@ -270,7 +270,7 @@ async def tenant_access(token: str, request: Request):
     user = _virtual_link_user(link)
     refresh = await create_session(db, user["id"])
     resp = _access_redirect("/")
-    _set_cookies(resp, create_access_token(user), refresh)
+    _set_cookies(resp, create_access_token(user), refresh, iframe=True)
     ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or \
         (request.client.host if request.client else None)
     await db.tenant_access_tokens.update_one(

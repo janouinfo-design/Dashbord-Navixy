@@ -6,6 +6,7 @@ import jwt
 import hashlib
 from datetime import datetime, timezone, timedelta
 from typing import Optional
+from urllib.parse import urlparse
 from fastapi import APIRouter, Request, Response, HTTPException
 from pydantic import BaseModel
 from cryptography.fernet import Fernet
@@ -109,7 +110,15 @@ async def audit_event(db, tenant, action: str, by: str, detail: str = None):
                                    "detail": detail, "at": datetime.now(timezone.utc).isoformat()})
 
 
-def _set_cookies(response: Response, access: str, refresh: str):
+def _set_cookies(response: Response, access: str, refresh: str, iframe: bool = False):
+    if iframe:
+        # Sessions par lien : SameSite=None + Partitioned (CHIPS) pour fonctionner en iframe cross-site
+        for name, val, age in (("access_token", access, ACCESS_TTL_MIN * 60),
+                               ("refresh_token", refresh, REFRESH_TTL_DAYS * 86400)):
+            response.headers.append(
+                "set-cookie",
+                f"{name}={val}; HttpOnly; Secure; SameSite=None; Partitioned; Path=/; Max-Age={age}")
+        return
     response.set_cookie("access_token", access, httponly=True, secure=True,
                         samesite="lax", max_age=ACCESS_TTL_MIN * 60, path="/")
     response.set_cookie("refresh_token", refresh, httponly=True, secure=True,
@@ -169,6 +178,18 @@ def make_require_user(db):
                 raise HTTPException(status_code=403, detail="PASSWORD_CHANGE_REQUIRED")
             if role in ("READ_ONLY", "DRIVER") and request.method not in ("GET", "HEAD", "OPTIONS"):
                 raise HTTPException(status_code=403, detail="Accès en lecture seule")
+            if user.get("via_link") and request.method not in ("GET", "HEAD", "OPTIONS"):
+                # Cookies SameSite=None (iframe) → garde anti-CSRF : l'Origin doit correspondre au host servi
+                origin = request.headers.get("origin")
+                if origin:
+                    o_host = (urlparse(origin).hostname or "").lower()
+                    allowed = set()
+                    for h in (request.headers.get("host", ""), request.headers.get("x-forwarded-host", "")):
+                        h = h.split(",")[0].strip().split(":")[0].lower()
+                        if h:
+                            allowed.add(h)
+                    if o_host not in allowed:
+                        raise HTTPException(status_code=403, detail="Origine non autorisée")
             tenant = user.get("tenant_id")
             client = None
             if tenant:
@@ -373,7 +394,7 @@ def create_auth_router(db) -> APIRouter:
         await db.sessions.update_one({"jti": payload["jti"]}, {"$set": {
             "revoked": True, "rotated_at": datetime.now(timezone.utc).isoformat()}})
         new_refresh = await create_session(db, user["id"])
-        _set_cookies(response, create_access_token(user), new_refresh)
+        _set_cookies(response, create_access_token(user), new_refresh, iframe=sub.startswith("link:"))
         return {"success": True}
 
     @router.post("/change-password")

@@ -88,6 +88,9 @@ class TestAccessLinkEdit:
         assert r.status_code == 302, r.text
         assert r.headers["location"] == "/"
         assert "no-store" in r.headers.get("cache-control", "")
+        set_cookie = r.headers.get("set-cookie", "")
+        assert "SameSite=None" in set_cookie, "cookies iframe: SameSite=None requis"
+        assert "Partitioned" in set_cookie, "cookies iframe: attribut Partitioned (CHIPS) requis"
         # cookies posés — le token ne transite jamais dans le SPA
         assert "access_token" in s.cookies
         assert "refresh_token" in s.cookies
@@ -142,6 +145,22 @@ class TestAccessLinkEdit:
         r = s.post(f"{BASE_URL}/api/flows", json={"name": "TEST_LINK_flow", "nodes": [], "connections": []})
         assert r.status_code == 200, r.text
         pytest.beta_flow_id = r.json()["flow"]["id"]
+
+    def test_link_session_csrf_cross_origin_blocked(self):
+        # Le proxy preview réécrit Origin — on teste la garde CSRF directement sur le backend
+        s = pytest.beta_edit_session
+        cookie = "; ".join(f"{c.name}={c.value}" for c in s.cookies if c.name in ("access_token", "refresh_token"))
+        r = requests.post("http://localhost:8001/api/flows",
+                          json={"name": "TEST_csrf", "nodes": [], "connections": []},
+                          headers={"Origin": "https://evil.example.com", "Cookie": cookie})
+        assert r.status_code == 403
+
+    def test_link_session_same_origin_post_allowed(self):
+        s = pytest.beta_edit_session
+        r = s.post(f"{BASE_URL}/api/flows", json={"name": "TEST_LINK_origin", "nodes": [], "connections": []},
+                   headers={"Origin": BASE_URL})
+        assert r.status_code == 200, r.text
+        s.delete(f"{BASE_URL}/api/flows/{r.json()['flow']['id']}")
 
     def test_link_session_refresh_ok(self):
         s = pytest.beta_edit_session
