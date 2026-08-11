@@ -76,7 +76,7 @@ function App() {
     <BrowserRouter>
       <AuthProvider>
         <Routes>
-          <Route path="/access/:token" element={<AccessPage />} />
+          <Route path="/lien-invalide" element={<AccessPage />} />
           <Route path="/change-password" element={<ChangePasswordGate />} />
           <Route path="/super-admin" element={<RequireSuperAdmin><SuperAdminLayout /></RequireSuperAdmin>}>
             <Route index element={<SuperAdminDashboard />} />

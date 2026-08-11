@@ -225,6 +225,16 @@ Vue generale | Analyse flotte | Conducteurs | Vehicules | Couts | IoT | (Audit v
   - Fichiers: backend/{auth.py,server.py,super_admin.py,docker-compose.yml}, frontend/{components/auth/AccessPage.jsx(nouveau),App.js,superadmin/ClientDetail.jsx,layout/Header.jsx}
   - Tests regression: /app/backend/tests/test_access_link.py (28 tests)
   - Bug corrige post-test: refresh des sessions lien (branche 'link:' dans /auth/refresh) — re-teste 28/28
+- [x] **Phase 2.2 Validation reelle du parcours sans login + fix confidentialite token** (2026-06, iteration_20 — 30/30, backend 28/28 pytest + frontend 100%):
+  - Faille corrigee (iteration_19 29/30): le token vivait dans la route SPA /access/<token> → visible par PostHog/analytics
+  - GET /api/access/{token} = echange 100% backend: 302 Location:'/' + cookies HttpOnly + Cache-Control:no-store + Referrer-Policy:no-referrer — le SPA/navigateur ne voit JAMAIS le token
+  - Erreurs = 302 vers /lien-invalide (invalide/revoque), ?motif=suspendu, ?motif=domaine — sans cookies ; page neutre FR sans jargon (AccessPage.jsx reecrite)
+  - Route SPA /access/:token SUPPRIMEE (App.js) ; PostHog ENTIEREMENT SUPPRIME de public/index.html
+  - Logs: filtre _AccessTokenLogFilter (server.py) → '/api/access/[REDACTED]' dans uvicorn ; anciens logs purges ; nginx-dashboard.conf: location /api/access/ avec access_log off (a deployer VPS)
+  - URL generee Super Admin: https://<sub>.logitrak.ch/api/access/<token>
+  - Durcissement minor: /auth/me des sessions lien verifie aussi client.is_active (401 si suspendu)
+  - Valide 30/30: URL finale sans token, zero requete posthog, F5/onglets/refresh, edit/read 403, revocation, suspension+reactivation, isolation X-Act-As ignore, Mongo hash-only, non-regression logins
+  - IMPORTANT DEPLOIEMENT VPS: regenerer le lien Techlift apres deploiement (ancien format /access/<token> obsolete) + git pull de nginx-dashboard.conf
 - [ ] Integration Baubit (P2)
 - [ ] Responsive mobile/tablette complet (P2)
 - [ ] Auto-refresh (P2)

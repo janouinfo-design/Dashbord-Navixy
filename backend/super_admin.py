@@ -407,7 +407,7 @@ def create_super_admin_router(db, navixy, cache) -> APIRouter:
         })
         await _audit(tenant, "ACCESS_LINK_CREATED", request.state.user["email"], f"mode={body.access_mode}")
         return {"success": True, "access_mode": body.access_mode,
-                "url": f"https://{client['subdomain']}.logitrak.ch/access/{token}",
+                "url": f"https://{client['subdomain']}.logitrak.ch/api/access/{token}",
                 "note": "Lien affiché une seule fois — l'ancien lien est révoqué."}
 
     @router.delete("/clients/{client_id}/access-link")

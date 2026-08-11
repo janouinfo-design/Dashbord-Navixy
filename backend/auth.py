@@ -150,6 +150,9 @@ async def get_current_user(request: Request, db) -> dict:
         link = await db.tenant_access_tokens.find_one({"id": sub[5:], "revoked": False})
         if not link:
             raise HTTPException(status_code=401, detail="Lien d'accès révoqué")
+        client = await db.clients.find_one({"tenant": link["tenant"]}, {"is_active": 1})
+        if not client or not client.get("is_active", True):
+            raise HTTPException(status_code=401, detail="Accès suspendu")
         return _virtual_link_user(link)
     user = await db.users.find_one({"id": sub}, {"_id": 0})
     if not user or not user.get("is_active", True):

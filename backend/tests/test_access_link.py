@@ -81,14 +81,14 @@ class TestAccessLinkEdit:
         assert "test-beta" in data["url"]
         pytest.beta_edit_token = _extract_token(data["url"])
 
-    def test_public_access_returns_cookies(self):
+    def test_public_access_302_sets_cookies(self):
         token = pytest.beta_edit_token
         s = requests.Session()
-        r = s.get(f"{BASE_URL}/api/access/{token}")
-        assert r.status_code == 200, r.text
-        assert r.json()["success"] is True
-        assert r.json()["tenant"] == "test-beta"
-        # cookies posés
+        r = s.get(f"{BASE_URL}/api/access/{token}", allow_redirects=False)
+        assert r.status_code == 302, r.text
+        assert r.headers["location"] == "/"
+        assert "no-store" in r.headers.get("cache-control", "")
+        # cookies posés — le token ne transite jamais dans le SPA
         assert "access_token" in s.cookies
         assert "refresh_token" in s.cookies
         pytest.beta_edit_session = s
@@ -162,8 +162,9 @@ class TestAccessLinkRead:
         assert r.status_code == 200
         token = _extract_token(r.json()["url"])
         s = requests.Session()
-        r2 = s.get(f"{BASE_URL}/api/access/{token}")
-        assert r2.status_code == 200
+        r2 = s.get(f"{BASE_URL}/api/access/{token}", allow_redirects=False)
+        assert r2.status_code == 302
+        assert "access_token" in s.cookies
         pytest.beta_read_session = s
         pytest.beta_read_token = token
 
@@ -194,10 +195,12 @@ class TestAccessLinkRevocation:
         r = pytest.pre_revoke_session.get(f"{BASE_URL}/api/auth/me")
         assert r.status_code == 401
 
-    def test_reuse_revoked_token_404(self):
+    def test_reuse_revoked_token_redirects_invalid(self):
         s = requests.Session()
-        r = s.get(f"{BASE_URL}/api/access/{pytest.pre_revoke_token}")
-        assert r.status_code == 404
+        r = s.get(f"{BASE_URL}/api/access/{pytest.pre_revoke_token}", allow_redirects=False)
+        assert r.status_code == 302
+        assert "/lien-invalide" in r.headers["location"]
+        assert "access_token" not in s.cookies
 
     def test_refresh_after_revoke_401(self):
         r = pytest.pre_revoke_session.post(f"{BASE_URL}/api/auth/refresh")
@@ -205,9 +208,12 @@ class TestAccessLinkRevocation:
 
 
 class TestAccessLinkSecurity:
-    def test_bogus_token_404(self):
-        r = requests.get(f"{BASE_URL}/api/access/nimportequoi_xxxxx")
-        assert r.status_code == 404
+    def test_bogus_token_redirects_invalid(self):
+        s = requests.Session()
+        r = s.get(f"{BASE_URL}/api/access/nimportequoi_xxxxx", allow_redirects=False)
+        assert r.status_code == 302
+        assert "/lien-invalide" in r.headers["location"]
+        assert "access_token" not in s.cookies
 
     def test_suspended_client_link_forbidden(self, sa_session, alpha_client_id):
         # Create link for alpha, suspend alpha, expect 403 on /access
@@ -219,8 +225,11 @@ class TestAccessLinkSecurity:
         rs = sa_session.post(f"{BASE_URL}/api/admin/clients/{alpha_client_id}/suspend")
         assert rs.status_code == 200
         try:
-            r2 = requests.get(f"{BASE_URL}/api/access/{token}")
-            assert r2.status_code == 403
+            s2 = requests.Session()
+            r2 = s2.get(f"{BASE_URL}/api/access/{token}", allow_redirects=False)
+            assert r2.status_code == 302
+            assert "motif=suspendu" in r2.headers["location"]
+            assert "access_token" not in s2.cookies
         finally:
             # RÉACTIVER absolument (l'utilisateur a insisté)
             ract = sa_session.post(f"{BASE_URL}/api/admin/clients/{alpha_client_id}/reactivate")

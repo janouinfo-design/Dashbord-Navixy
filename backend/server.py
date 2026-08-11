@@ -3,7 +3,7 @@ LOGITRAK Fleet Dashboard — Multi-Client API
 Slim route layer. All computation is delegated to AnalyticsEngine.
 """
 from fastapi import FastAPI, APIRouter, HTTPException, Query, Request, Response, Depends
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, RedirectResponse
 from dotenv import load_dotenv
 from starlette.middleware.cors import CORSMiddleware
 from motor.motor_asyncio import AsyncIOMotorClient
@@ -59,6 +59,27 @@ auth_router = create_auth_router(db)
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 logger = logging.getLogger(__name__)
+
+
+class _AccessTokenLogFilter(logging.Filter):
+    """Rédige le token brut des liens d'accès dans les logs applicatifs."""
+    _RE = re.compile(r"/api/access/\S+")
+
+    def filter(self, record):
+        try:
+            if record.args:
+                record.args = tuple(
+                    self._RE.sub("/api/access/[REDACTED]", a) if isinstance(a, str) and "/api/access/" in a else a
+                    for a in record.args)
+            if isinstance(record.msg, str) and "/api/access/" in record.msg:
+                record.msg = self._RE.sub("/api/access/[REDACTED]", record.msg)
+        except Exception:
+            pass
+        return True
+
+
+for _lg in ("uvicorn.access", "uvicorn.error", ""):
+    logging.getLogger(_lg).addFilter(_AccessTokenLogFilter())
 
 # ============ MULTI-TENANT ============
 
@@ -228,26 +249,34 @@ async def get_client_info(request: Request):
 
 # ============ ACCÈS DIRECT PAR LIEN TENANT (sans login, clé Navixy jamais exposée) ============
 
+def _access_redirect(path: str) -> RedirectResponse:
+    r = RedirectResponse(url=path, status_code=302)
+    r.headers["Cache-Control"] = "no-store"
+    r.headers["Referrer-Policy"] = "no-referrer"
+    return r
+
+
 @public_router.get("/access/{token}")
-async def tenant_access(token: str, request: Request, response: Response):
+async def tenant_access(token: str, request: Request):
     link = await db.tenant_access_tokens.find_one({"token_hash": _token_hash(token), "revoked": False})
     if not link:
-        raise HTTPException(status_code=404, detail="Lien d'accès invalide ou révoqué")
+        return _access_redirect("/lien-invalide")
     client = await db.clients.find_one({"tenant": link["tenant"]}, {"_id": 0, "navixy_hash": 0})
     if not client or not client.get("is_active", True):
-        raise HTTPException(status_code=403, detail="Client suspendu — contactez LOGITRAK")
+        return _access_redirect("/lien-invalide?motif=suspendu")
     sub_client = await get_client_from_subdomain(request)
     if sub_client and (sub_client.get('tenant') or sub_client['subdomain']) != link["tenant"]:
-        raise HTTPException(status_code=403, detail="Ce lien n'est pas valable sur ce domaine")
+        return _access_redirect("/lien-invalide?motif=domaine")
     user = _virtual_link_user(link)
     refresh = await create_session(db, user["id"])
-    _set_cookies(response, create_access_token(user), refresh)
+    resp = _access_redirect("/")
+    _set_cookies(resp, create_access_token(user), refresh)
     ip = request.headers.get("x-forwarded-for", "").split(",")[0].strip() or \
         (request.client.host if request.client else None)
     await db.tenant_access_tokens.update_one(
         {"id": link["id"]}, {"$set": {"last_used_at": datetime.now(timezone.utc).isoformat()}})
     await audit_event(db, link["tenant"], "ACCESS_LINK_USED", f"acces-direct@{link['tenant']}", f"IP {ip}")
-    return {"success": True, "tenant": link["tenant"], "client_name": client["name"]}
+    return resp
 
 # ============ TENANT CONTEXT (utilisateur authentifié) ============
 

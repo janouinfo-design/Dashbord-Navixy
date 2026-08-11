@@ -1,0 +1,42 @@
+{
+  "summary": "Phase 2.2 (validation navigateur du parcours client par lien d'accès) — 29/30 checks passent. Backend/API 100% conformes (accès direct sans login, cookies httpOnly+secure, aucun JWT en localStorage, URL propre '/' sans token, dashboard-layout visible, F5 conserve la session, nouvel onglet partage la session, droits edit vs read appliqués côté backend, X-Act-As-Tenant ignoré pour session lien, injection localStorage logitrak:actAs sans effet ni crash, /api/admin/clients/{alpha}/users=403, aucune fuite de flows/véhicules alpha, révocation en cours de session → /api/auth/me=401 et /access/<tok>=access-error, ancien lien 404 après régénération, nouveau lien OK, suspension → /api/flows=403 sur la session existante, /api/access/{tok} suspendu=403, réactivation → même lien refonctionne sans régénération, window.open OK, URL générée = https://<subdomain>.logitrak.ch/access/<token>, aucun terme technique visible dans l'UI client). 1 seule anomalie DÉTECTÉE et CRITIQUE : PostHog exfiltre l'URL /access/<token> dans localStorage ($client_session_props.props.u) ET vers us.i.posthog.com (SaaS externe). Le token secret est donc mémorisé côté client et envoyé à un tiers — cela contredit tout le design (hash sha256 côté serveur, cookies httpOnly, replace('/') pour purger l'URL). Un attaquant lisant le storage ou l'admin PostHog peut rejouer le lien.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "GET /api/auth/me (session lien après suspension du tenant)", "issue": "Renvoie 200 au lieu de 403 pour un user virtuel de lien lorsque le client est suspendu. get_current_user (auth.py L149-153) ne vérifie pas client.is_active pour les sessions link:. Impact limité : tous les endpoints protégés (via require_user) renvoient bien 403, seul /me leake l'identité virtuelle. Fix suggéré : dans la branche 'link:' de get_current_user, vérifier db.clients.find_one({tenant: link.tenant}).is_active avant de retourner le user virtuel."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [
+      {"flow": "PostHog leak /access/<token>", "issue": "L'analytics PostHog (frontend/public/index.html L103-110) capture window.location.href et le stocke dans localStorage sous ph_phc_..._posthog.$client_session_props.props.u — la chaîne complète /access/<token_secret> y apparaît. PostHog l'envoie aussi à https://us.i.posthog.com (session_recording activé). Le token clair fuite donc à la fois dans le stockage navigateur et vers un SaaS tiers, ce qui casse la promesse de sécurité du mécanisme (hash sha256 serveur, cookies httpOnly, replace('/') après succès).", "affected_selectors": ["frontend/public/index.html posthog.init"]}
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/phase22_browser_test.py",
+    "/app/backend/tests/test_access_link.py"
+  ],
+  "action_items": [
+    "SÉCURITÉ CRITIQUE : masquer /access/<token> de PostHog. Options : (a) redirect côté serveur (302 vers /) avant que le SPA ne charge, PostHog ne verra jamais l'URL secrète ; (b) dans AccessPage.jsx, faire window.history.replaceState pour supprimer le token AVANT posthog.init ou appeler posthog.opt_out_capturing() sur /access/* puis opt_in après replace('/') ; (c) reroute PostHog pour ignorer /access/* via before_send hook (posthog.init sanitize_properties). L'option (a) est la plus robuste : GET /access/<token> côté backend pose déjà les cookies — le retourner en 302 vers '/' au lieu de laisser le SPA gérer élimine complètement la fuite.",
+    "BACKEND (mineur) : dans auth.py get_current_user branche 'link:' (L149-153), vérifier client.is_active avant de retourner _virtual_link_user(link) pour renvoyer 403 sur /api/auth/me quand le tenant est suspendu — cohérence avec require_user."
+  ],
+  "critical_code_review_comments": [
+    "frontend/public/index.html : posthog.init sans sanitize_properties ni before_send. Toute URL du SPA (y compris /access/<token>, /reset-password?token=..., /change-password) est envoyée telle quelle à us.i.posthog.com et persistée dans localStorage — risque d'exfiltration systémique.",
+    "auth.py get_current_user branche link : ne vérifie pas la suspension du tenant, seul require_user le fait. Incohérence mineure mais /me leake une identité virtuelle sur un tenant suspendu.",
+    "Recensement 'default' dans le code (info) : backend/server.py L84,124 (_resolve_tenant fallback), backend/auth.py L174,244,250 (client is None if tenant!='default', migration flows sans tenant, seed hash default), backend/super_admin.py L211,357,429,443,461 (bypass sub=='default'). 10 usages restants — RAS pour Phase 2.2 mais à documenter pour la purge finale du tenant 'default'."
+  ],
+  "updated_files": [
+    "/app/backend/tests/phase22_browser_test.py"
+  ],
+  "success_rate": {
+    "backend": "100% (droits edit vs read, isolation, révocation, suspension côté endpoints protégés, host format URL)",
+    "frontend": "97% (29/30 — parcours navigateur, cookies, F5/back/nouvel onglet, isolation OK ; 1 fuite PostHog vers SaaS externe + localStorage)"
+  },
+  "seed_data_creation": "Créé/révoqué au cours du test : ~7 liens d'accès test-beta (edit + read, tous révoqués en fin de test) et 1 TEST_LINK_flow supprimé. test-beta et test-alpha laissés is_active=true à la fin (contrôlé).",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "test_credentials": "SUPER_ADMIN admin@logitrak.ch / LT!u4qv8ibtN21iOHDz — voir /app/memory/test_credentials.md",
+  "context_for_next_testing_agent": "Le script /app/backend/tests/phase22_browser_test.py (nécessite playwright + `python -m playwright install chromium` déjà fait) enchaîne tout le parcours en ~1 min et imprime PASS/FAIL. Selectors utilisés côté frontend : [data-testid='dashboard-layout'], [data-testid='access-error'], [data-testid='access-page']. URL API réelle du lien = /api/access/<token> (le /access/<token> sans /api renvoie l'index HTML du SPA — piège). Une fois le fix PostHog appliqué, relancer ce script : NO_TOKEN_IN_STORAGE doit passer OK. La révocation via DELETE /api/admin/clients/{id}/access-link marque le lien revoked=true ; l'API /api/access/<tok> revoked renvoie 404 'Lien d'accès invalide ou révoqué'. La suspension bloque bien /api/access/<tok>=403 et tous les endpoints via require_user, mais pas /api/auth/me (mineur).",
+  "rca_of_the_issue": "PostHog analytics est initialisé globalement dans public/index.html avec session_recording activé et sans sanitize_properties. Sur toute navigation SPA, PostHog capture window.location.href et le persiste dans localStorage (clé ph_phc_..._posthog → $client_session_props.props.u) puis l'envoie à us.i.posthog.com. Quand le client Techlift clique 'Tableau de bord' dans Navixy, l'URL /access/<token_clair> transite donc dans PostHog avant que AccessPage.jsx n'appelle window.location.replace('/'). Reproduction : ouvrir un navigateur privé, aller sur /access/<tok>, attendre 2 s, inspecter localStorage → le token complet y est. Le contrat de sécurité (hash sha256 côté DB, cookies httpOnly, replace('/') pour purger l'historique) est ainsi contourné par un composant frontend tiers. Mitigation la plus simple : côté backend, transformer GET /access/<token> en 302 → / avec Set-Cookie ; le SPA ne rechargera jamais /access/<token> et PostHog ne verra que /."
+}
