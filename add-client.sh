@@ -21,6 +21,7 @@ echo ""
 # Collecte des informations
 read -p "Nom du client (ex: Membrez): " CLIENT_NAME
 read -p "Subdomain (ex: membrez): " SUBDOMAIN
+SUBDOMAIN=$(echo "$SUBDOMAIN" | tr '[:upper:]' '[:lower:]')
 read -p "Hash Navixy (cle API): " NAVIXY_HASH
 read -p "Couleur hex (defaut #1565c0): " COLOR
 COLOR=${COLOR:-#1565c0}
