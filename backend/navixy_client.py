@@ -139,6 +139,28 @@ class NavixyClient:
     async def get_tracker_readings(self, tracker_id: int, h: str) -> dict:
         return await self.request("tracker/readings/list", {"tracker_id": tracker_id}, navixy_hash=h)
 
+    async def get_sensors(self, tracker_id: int, h: str) -> dict:
+        return await self.request("tracker/sensor/list", {"tracker_id": tracker_id}, navixy_hash=h)
+
+    async def get_sensor_history(self, tracker_id: int, sensor_id: int, from_dt: str, to_dt: str, h: str) -> dict:
+        return await self.request("tracker/sensor/data/read", {
+            "tracker_id": tracker_id, "sensor_id": sensor_id, "from": from_dt, "to": to_dt
+        }, navixy_hash=h)
+
+    async def get_readings_and_sensors_batch(self, ids: List[int], h: str, batch_size: int = 10) -> Dict[int, tuple]:
+        """Par traceur: (readings, sensors). Traceur absent du résultat = échec des deux appels."""
+        out: Dict[int, tuple] = {}
+
+        async def _one(tid: int):
+            r, s = await asyncio.gather(self.get_tracker_readings(tid, h), self.get_sensors(tid, h))
+            return tid, r, s
+
+        for i in range(0, len(ids), batch_size):
+            for tid, r, s in await asyncio.gather(*[_one(t) for t in ids[i:i + batch_size]]):
+                if r.get("success") or s.get("success"):
+                    out[tid] = (r, s)
+        return out
+
     async def get_tracks(self, tracker_id: int, from_dt: str, to_dt: str, h: str) -> dict:
         return await self.request("track/list", {
             "tracker_id": tracker_id, "from": from_dt, "to": to_dt

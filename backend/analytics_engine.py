@@ -161,15 +161,29 @@ class AnalyticsEngine:
         odo_vals = odo_raw.get('value', {}) if odo_raw.get('success') else {}
         eh_vals = eh_raw.get('value', {}) if eh_raw.get('success') else {}
 
-        # Fuel config
+        # Fuel config + motorisation garage (un EV ne reçoit jamais de litres estimés)
         fuel_cfg = await self.get_fuel_config(tenant)
         rate = fuel_cfg.get('default_consumption_rate')
         price = fuel_cfg.get('default_fuel_price') or 2.0
+
+        fuel_type_by_tid = {}
+        vg = await self.navixy.get_vehicles(navixy_hash)
+        if vg.get('success'):
+            audit.real("vehicle_fuel_type", "vehicle/list")
+            for gv in vg.get('list', []):
+                if gv.get('tracker_id'):
+                    fuel_type_by_tid[gv['tracker_id']] = gv.get('fuel_type')
 
         if rate:
             audit.computed("fuel_cost", "(mileage/100) × rate × price", {"rate": rate, "price": price})
         else:
             audit.unavailable("fuel_consumption", "Aucun taux de consommation configuré — configurable via /api/config/fuel")
+
+        def _flag(raw):
+            if not raw.get('success'):
+                return "error"
+            return "partial" if raw.get('partial') else "ok"
+        data_status = {"mileage": _flag(mileage_raw), "odometer": _flag(odo_raw), "engine_hours": _flag(eh_raw)}
 
         vehicles = []
         total_mileage = 0.0
@@ -183,18 +197,22 @@ class AnalyticsEngine:
             loc = gps.get('location') or {}
 
             mkm = period_mileage.get(ts, 0)
-            odo = odo_vals.get(ts) or 0
-            eh = eh_vals.get(ts) or 0
+            odo = odo_vals.get(ts)          # None = donnée absente, jamais 0 silencieux
+            eh = eh_vals.get(ts)
             total_mileage += mkm
-            total_eh += eh
+            if eh is not None:
+                total_eh += eh
 
-            fuel_used = round(mkm * rate / 100, 1) if rate and mkm > 0 else None
+            ftype = fuel_type_by_tid.get(tid)
+            is_electric = (ftype or "").strip().lower() == "electric"
+            fuel_used = round(mkm * rate / 100, 1) if rate and mkm > 0 and not is_electric else None
             fuel_cost = round(fuel_used * price, 1) if fuel_used is not None else None
 
             vehicles.append({
                 "tracker_id": tid,
                 "label": tracker['label'],
                 "model": tracker.get('source', {}).get('model', 'Unknown'),
+                "fuel_type": ftype,
                 "mileage": mkm,
                 "total_odometer": odo,
                 "engine_hours": eh,
@@ -210,6 +228,7 @@ class AnalyticsEngine:
         result = {
             "success": True,
             "period": {"from": from_date, "to": to_date},
+            "data_status": data_status,
             "summary": {
                 "total_vehicles": len(vehicles),
                 "total_mileage": round(total_mileage, 1),
@@ -299,6 +318,12 @@ class AnalyticsEngine:
         eh_vals = eh_raw.get('value', {}) if eh_raw.get('success') else {}
         threshold = self.ACTIVE_DAY_THRESHOLD_KM
 
+        def _flag(raw):
+            if not raw.get('success'):
+                return "error"
+            return "partial" if raw.get('partial') else "ok"
+        data_status = {"mileage": _flag(mileage_raw), "engine_hours": _flag(eh_raw)}
+
         vehicles = []
         for tracker in tracker_list:
             tid = tracker['id']
@@ -365,6 +390,7 @@ class AnalyticsEngine:
             "success": True,
             "period": {"from": from_date, "to": to_date, "days": days_count},
             "active_day_threshold_km": threshold,
+            "data_status": data_status,
             "summary": {
                 "average_utilization_pct": avg_util,
                 "total_vehicles": len(vehicles),

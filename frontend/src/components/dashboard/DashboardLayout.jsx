@@ -141,8 +141,22 @@ export const DashboardLayout = () => {
         </div>
       </div>
 
+      {(() => {
+        const ds = { ...(data.stats?.data_status || {}), ...(data.efficiency?.data_status || {}) };
+        const issues = Object.entries(ds).filter(([, s]) => s !== "ok");
+        if (!issues.length || loading) return null;
+        return (
+          <div className="bg-amber-50 border-b border-amber-200" data-testid="partial-data-banner">
+            <div className="max-w-[1600px] mx-auto px-4 lg:px-8 py-2 text-xs text-amber-800">
+              ⚠ Données partielles — sources en {issues.some(([, s]) => s === "error") ? "erreur" : "réponse incomplète"} :{" "}
+              {issues.map(([k, s]) => `${k} (${s === "error" ? "échec" : "partiel"})`).join(", ")}. Les totaux affichés peuvent être incomplets.
+            </div>
+          </div>
+        );
+      })()}
+
       <div className="transition-opacity duration-200">
-        {loading ? (
+      {loading ? (
           <div className="flex items-center justify-center h-[calc(100vh-140px)]" data-testid="loading">
             <div className="flex flex-col items-center gap-3">
               <div className="w-6 h-6 border-2 border-gray-300 border-t-gray-800 rounded-full animate-spin" />

@@ -25,6 +25,7 @@ from cache_manager import TenantCacheManager
 from analytics_engine import AnalyticsEngine
 from ecodriving import compute_driver_ecodriving
 from vehicle_admin import create_vehicle_admin_router
+from capabilities import create_capabilities_router
 from auth import (
     make_require_user, require_role, create_auth_router,
     seed_and_migrate, encrypt_hash, decrypt_hash, MODULES,
@@ -568,8 +569,10 @@ async def export_fleet_stats(
     w.writerow(["Véhicule", "ID", "Modèle", "Kilométrage", "Heures moteur", "Statut connexion", "Carburant (L)", "Coût carburant (CHF)"])
     for v in stats.get('vehicles', []):
         w.writerow([v['label'], v['tracker_id'], v['model'], v['mileage'],
-                     v['engine_hours'], v['connection_status'],
-                     v.get('fuel_used_liters', 'N/A'), v.get('fuel_cost_chf', 'N/A')])
+                     v['engine_hours'] if v.get('engine_hours') is not None else 'N/A',
+                     v['connection_status'],
+                     v.get('fuel_used_liters') if v.get('fuel_used_liters') is not None else 'N/A',
+                     v.get('fuel_cost_chf') if v.get('fuel_cost_chf') is not None else 'N/A'])
     return StreamingResponse(
         io.BytesIO(output.getvalue().encode('utf-8-sig')),
         media_type="text/csv",
@@ -718,9 +721,9 @@ async def audit_compare(
         raw_odo_val = raw_odo.get(ts) or 0
         raw_eh_val = raw_eh.get(ts) or 0
 
-        eng_mileage = ev.get('mileage', 0)
-        eng_odo = ev.get('total_odometer', 0)
-        eng_eh = ev.get('engine_hours', 0)
+        eng_mileage = ev.get('mileage') or 0
+        eng_odo = ev.get('total_odometer') or 0
+        eng_eh = ev.get('engine_hours') or 0
 
         mileage_match = abs(raw_mileage_val - eng_mileage) < 0.5
         odo_match = abs(raw_odo_val - eng_odo) < 1
@@ -888,8 +891,8 @@ async def export_pdf(
             cell,
             label,
             f"{v['mileage']}",
-            f"{round(v['total_odometer'])}",
-            f"{round(v['engine_hours'])}",
+            f"{round(v['total_odometer'])}" if v.get('total_odometer') is not None else "—",
+            f"{round(v['engine_hours'])}" if v.get('engine_hours') is not None else "—",
             v['connection_status'],
             f"{cv.get('utilization_score', 0)}%",
         ])
@@ -1007,6 +1010,7 @@ async def export_pdf(
 # ============ MOUNT ============
 
 api_router.include_router(create_vehicle_admin_router(db, navixy, get_tenant_context, NAVIXY_API_URL))
+api_router.include_router(create_capabilities_router(db, navixy, cache, get_tenant_context))
 api_router.include_router(create_super_admin_router(db, navixy, cache))
 app.include_router(auth_router)
 app.include_router(public_router)

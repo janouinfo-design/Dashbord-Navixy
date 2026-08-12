@@ -31,6 +31,7 @@ MODULE_PATH_MAP = (
     ("/api/drivers/ecodriving", "conducteurs"),
     ("/api/reports/driver", "conducteurs"),
     ("/api/vehicles/admin", "vehicules"),
+    ("/api/vehicles/", "vehicules"),
     ("/api/config/fuel", "carburant"),
     ("/api/export/", "rapports"),
 )

@@ -249,6 +249,19 @@ Vue generale | Analyse flotte | Conducteurs | Vehicules | Couts | IoT | (Audit v
   - Fix navixy_client.py: _chunked_stats() — decoupe en lots de 100, fusionne les resultats (result_key 'result' pour mileage, 'value' pour counters), flag 'partial' + warning si un lot echoue
   - Valide sur donnees reelles Techlift preview: chunk=10 == appel unique (17219.6 km, 37 cles identiques) ; odometer 33 cles, engine_hours 27 cles ; endpoint /api/fleet/stats e2e OK (37 veh, 17224 km)
   - Non couvert: report/tracker/generate (eco-conduite plugin 46) envoie aussi tous les IDs — limite Navixy inconnue, a surveiller sur Membrez onglet Conducteurs
+- [x] **Phase 2 Multi-energie — Capability Map par vehicule** (2026-06, iteration_21 — 48/48 pytest + frontend 100%):
+  - /app/backend/capabilities.py (nouveau): detection PAR VEHICULE via tracker/sensor/list + readings (batch 10), whitelist KNOWN_INPUTS (obd_fuel %, obd_consumption unite NON verifiee, obd_mileage km), EV_KEYS (7) toujours UNAVAILABLE (aucun input EV verifie — liste EV_VERIFIED_INPUTS vide volontairement), sensors ambigus (avl_io_*, obd_absolute_load_value) → unverified_sensors
+  - Fraicheur: AVAILABLE si update_time < 48h sinon STALE (jamais presente comme temps reel) ; jamais 0 pour absence
+  - Cache: memoire tenant 300s + Mongo vehicle_capabilities TTL 6h, ?refresh=true force le re-scan
+  - Endpoints: GET /api/vehicles/capabilities (+ /{tid}/capabilities, 404 si inconnu), module 'vehicules', isolation testee (test-beta + header X-Act-As ignore)
+  - navixy_client.py: get_sensors, get_sensor_history (tracker/sensor/data/read VALIDE — l'ancien dead-end venait de mauvais params), get_readings_and_sensors_batch
+  - analytics_engine: fleet_stats a fuel_type par vehicule (vehicle/list), EV → fuel_used_liters null (jamais litres estimes), odometer/engine_hours null si absents, data_status {ok|partial|error} sur stats+efficiency ; FORMULE UTILISATION INTOUCHEE
+  - Frontend VehiclesTab: MotorBadge (badge seulement si motorisation connue — Zoe sans badge), colonne Carburant (93% frais / 'ancien' ambre / '—'), CapabilitiesPanel (fiche: capacites, EV 'Non detectee', DTC avec anciennete, VIN conflit, sensors ignores), select 'Motorisation (correction LOGITRAK)' → vehicle_admin.general.motorisation (override Mongo, PAS d'ecriture Navixy — enum Navixy non confirme)
+  - DashboardLayout: banniere partial-data-banner si data_status != ok
+  - Valide reel: Techlift 37 (fuel_level 3, vin 4), FlexMobil 52 (Zoe=zero EV fictif, Prius DTC P0A80 STALE, Porto 93% AVAILABLE, Tigizirt avl_io_49 unverified), exports PDF/CSV ok, config fuel restauree
+  - Tests: /app/backend/tests/test_capabilities.py (18) + non-regression access_link (30)
+  - Decisions assumees: tracker 'just_registered' avec odometer 0.0 renvoye tel quel par Navixy (valeur reelle API) ; obd_consumption jamais affiche en L/100 ni utilise en couts
+- [ ] Phase 3 (a valider): exploitation fuel_level dans Analyse/couts, historique sensor graphiques, EV quand vehicule reel compatible
 - [ ] Integration Baubit (P2)
 - [ ] Responsive mobile/tablette complet (P2)
 - [ ] Auto-refresh (P2)

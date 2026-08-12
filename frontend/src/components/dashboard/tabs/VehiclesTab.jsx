@@ -30,6 +30,88 @@ const fmtDate = (s) => s ? new Date(s).toLocaleDateString("fr-FR") : "—";
 // White-label: masque le nom du fournisseur dans les modèles de traceurs
 const cleanDeviceLabel = (s) => (s || "").replace(/navixy/gi, "").replace(/__+/g, "_").replace(/^_+|_+$/g, "");
 
+const MOTOR_META = {
+  diesel: { label: "Diesel", cls: "bg-gray-100 text-gray-700 border-gray-200" },
+  petrol: { label: "Essence", cls: "bg-orange-50 text-orange-700 border-orange-200" },
+  hybrid: { label: "Hybride", cls: "bg-teal-50 text-teal-700 border-teal-200" },
+  phev: { label: "Hybride rech.", cls: "bg-cyan-50 text-cyan-700 border-cyan-200" },
+  electric: { label: "Électrique", cls: "bg-emerald-50 text-emerald-700 border-emerald-200" },
+};
+const MotorBadge = ({ motor, testId }) => {
+  const m = MOTOR_META[motor?.normalized];
+  if (!m) return null;
+  return <span className={`inline-flex px-1.5 py-0.5 rounded border text-[9px] font-semibold uppercase tracking-wide ${m.cls}`} data-testid={testId}>{m.label}</span>;
+};
+
+const FuelLevel = ({ cap, testId }) => {
+  const fl = cap?.capabilities?.fuel_level;
+  if (!fl?.available || fl.value === null || fl.value === undefined)
+    return <span className="text-gray-300" data-testid={testId}>—</span>;
+  const stale = fl.status === "STALE";
+  return (
+    <span className={`tabular-nums font-medium ${stale ? "text-amber-600" : "text-gray-700"}`} data-testid={testId}
+      title={`Source: ${fl.source} · MAJ ${fl.update_time || "?"}${stale ? " · donnée ancienne (dernière valeur connue)" : ""}`}>
+      {Math.round(fl.value)} %{stale && <span className="ml-1 text-[9px] uppercase">ancien</span>}
+    </span>
+  );
+};
+
+const CAP_ROWS = [
+  ["gps", "GPS / utilisation"],
+  ["odometer", "Odomètre"],
+  ["engine_hours", "Heures moteur (total)"],
+  ["fuel_level", "Niveau carburant réel"],
+  ["fuel_consumption_obd", "Consommation OBD"],
+  ["vin_obd", "VIN OBD"],
+  ["dtc", "Codes défaut (DTC)"],
+];
+const CapabilitiesPanel = ({ cap }) => {
+  if (!cap) return null;
+  const caps = cap.capabilities || {};
+  const evDetected = ["ev_soc", "ev_range", "ev_charging_state"].some(k => caps[k]?.available);
+  return (
+    <div className="bg-white border border-gray-200 rounded-xl p-5" data-testid="capabilities-panel">
+      <h4 className="text-sm font-semibold text-gray-900 mb-1">Capacités télématiques détectées</h4>
+      <p className="text-[10px] text-gray-400 mb-3">Détection réelle par véhicule (sensors + readings) — pas déduite de la motorisation</p>
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+        {CAP_ROWS.map(([k, label]) => {
+          const c = caps[k];
+          const ok = c?.available;
+          const stale = c?.status === "STALE";
+          return (
+            <div key={k} className="flex items-center justify-between text-xs px-2.5 py-1.5 rounded-lg bg-gray-50/60" data-testid={`cap-${k}`}>
+              <span className="text-gray-600">{label}{k === "fuel_consumption_obd" && ok && <span className="text-[9px] text-amber-600 ml-1">(unité non vérifiée)</span>}</span>
+              <span className={`font-medium ${ok ? (stale ? "text-amber-600" : "text-emerald-600") : "text-gray-300"}`}>
+                {ok ? (stale ? "Ancien" : "✓") : "—"}
+              </span>
+            </div>
+          );
+        })}
+        <div className="flex items-center justify-between text-xs px-2.5 py-1.5 rounded-lg bg-gray-50/60" data-testid="cap-ev">
+          <span className="text-gray-600">Télématique EV (SoC, kWh, recharge)</span>
+          <span className={`font-medium ${evDetected ? "text-emerald-600" : "text-gray-300"}`}>{evDetected ? "✓" : "Non détectée"}</span>
+        </div>
+      </div>
+      {cap.vin?.conflict && (
+        <div className="mt-3 text-[11px] text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2" data-testid="vin-conflict">
+          ⚠ Conflit VIN — OBD : {cap.vin.obd} · Garage : {cap.vin.garage}. Aucune correction automatique, vérifiez la fiche.
+        </div>
+      )}
+      {cap.dtc?.codes?.length > 0 && (
+        <div className="mt-3 text-[11px] text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2" data-testid="dtc-codes">
+          Codes défaut OBD : <strong>{cap.dtc.codes.join(", ")}</strong>
+          <span className="text-amber-500 ml-2">MAJ {cap.dtc.update_time || "?"}{cap.dtc.status === "STALE" ? " (donnée ancienne)" : ""}</span>
+        </div>
+      )}
+      {(cap.unverified_sensors || []).length > 0 && (
+        <div className="mt-3 text-[10px] text-gray-400" data-testid="unverified-sensors">
+          Sensors non vérifiés (ignorés volontairement) : {cap.unverified_sensors.map(s => s.name).join(", ")}
+        </div>
+      )}
+    </div>
+  );
+};
+
 // Contrôle le plus proche non effectué
 const nextControle = (controles) => {
   const open = (controles || []).filter(c => c.due_date && !c.done_date).sort((a, b) => a.due_date.localeCompare(b.due_date));
@@ -77,13 +159,21 @@ const EditableSection = ({ title, subtitle, fields, values, readonlyFields = [],
               {f.icon && <f.icon size={10} />}{f.label}
             </div>
             {editing && !f.readonly ? (
+              f.type === "select" ? (
+                <select value={form[f.key] ?? ""} onChange={(e) => setForm(p => ({ ...p, [f.key]: e.target.value }))}
+                  className="w-full text-xs bg-white border border-gray-200 rounded-md px-2 py-1.5 focus:outline-none focus:border-gray-400"
+                  data-testid={`${testId}-input-${f.key}`}>
+                  {(f.options || []).map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+                </select>
+              ) : (
               <input type={f.type || "text"} value={form[f.key] ?? ""}
                 onChange={(e) => setForm(p => ({ ...p, [f.key]: e.target.value }))}
                 className="w-full text-xs bg-white border border-gray-200 rounded-md px-2 py-1.5 focus:outline-none focus:border-gray-400"
                 data-testid={`${testId}-input-${f.key}`} />
+              )
             ) : (
               <div className="text-sm text-gray-800 font-medium min-h-[20px]" data-testid={`${testId}-value-${f.key}`}>
-                {f.readonly ? (f.value ?? "—") : (f.type === "date" ? fmtDate(values[f.key]) : (values[f.key] || "—"))}
+                {f.readonly ? (f.value ?? "—") : (f.type === "date" ? fmtDate(values[f.key]) : (f.type === "select" ? ((f.options || []).find(o => o.value === values[f.key])?.label || "—") : (values[f.key] || "—")))}
               </div>
             )}
           </div>
@@ -250,7 +340,7 @@ const DocumentsTab = ({ tid, record, refresh }) => {
 };
 
 // ─── Fiche véhicule (drawer) ───
-const VehicleSheet = ({ vehicle, record, garageVehicle, unlinkedGarage, groupName, onClose, onSaved, onGarageSaved, onLinkChanged }) => {
+const VehicleSheet = ({ vehicle, record, garageVehicle, unlinkedGarage, groupName, capability, onClose, onSaved, onGarageSaved, onLinkChanged }) => {
   const [tab, setTab] = useState("general");
   const [photoUploading, setPhotoUploading] = useState(false);
   const [linkChoice, setLinkChoice] = useState("");
@@ -328,6 +418,7 @@ const VehicleSheet = ({ vehicle, record, garageVehicle, unlinkedGarage, groupNam
             <div>
               <h3 className="text-lg font-semibold" style={{ fontFamily: "Outfit, sans-serif" }}>{vehicle.label}</h3>
               <div className="flex flex-wrap items-center gap-2 mt-1.5 mb-3">
+                <MotorBadge motor={capability?.motorisation} testId="sheet-motor-badge" />
                 {gv?.reg_number && <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg bg-[#111] text-white text-[10px] font-semibold" data-testid="sheet-plate">{gv.reg_number}</span>}
                 <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-gray-200 text-[10px] text-gray-500"><Hash size={10} />VIN {gv?.vin || g.vin || "—"}</span>
                 <span className="inline-flex items-center gap-1 px-2 py-1 rounded-lg border border-gray-200 text-[10px] text-gray-500"><Gauge size={10} />{fmtKm(vehicle.total_odometer)}</span>
@@ -406,6 +497,14 @@ const VehicleSheet = ({ vehicle, record, garageVehicle, unlinkedGarage, groupNam
                   { key: "annee", label: "Année" },
                   { key: "vin", label: "VIN" },
                 ]),
+                { key: "motorisation", label: "Motorisation (correction LOGITRAK)", type: "select", options: [
+                  { value: "", label: "— Selon garage —" },
+                  { value: "diesel", label: "Diesel" },
+                  { value: "petrol", label: "Essence" },
+                  { value: "hybrid", label: "Hybride" },
+                  { value: "phev", label: "Hybride rechargeable" },
+                  { value: "electric", label: "Électrique" },
+                ] },
                 { key: "_km", label: "Kilométrage (GPS)", readonly: true, value: fmtKm(vehicle.total_odometer) },
                 { key: "_groupe", label: "Groupe", readonly: true, value: groupName || "—" },
                 { key: "base", label: "Base / Site" },
@@ -414,6 +513,7 @@ const VehicleSheet = ({ vehicle, record, garageVehicle, unlinkedGarage, groupNam
                 { key: "prochaine_maintenance", label: "Prochaine maintenance", type: "date" },
                 { key: "prochaine_expertise", label: "Prochaine expertise", type: "date" },
               ]} />
+            <CapabilitiesPanel cap={capability} />
           </div>
         )}
         {tab === "leasing" && (
@@ -487,6 +587,7 @@ export const VehiclesTab = ({ data }) => {
   const [groups, setGroups] = useState([]);
   const [garage, setGarage] = useState({ linked: {}, unlinked: [], ok: false });
   const [syncing, setSyncing] = useState(false);
+  const [caps, setCaps] = useState({});
 
   const fetchGarage = useCallback(async () => {
     setSyncing(true);
@@ -510,6 +611,7 @@ export const VehiclesTab = ({ data }) => {
     api.get(`${API}/vehicles/admin`).then(res => { if (res.data.success) setRecords(res.data.records || {}); })
       .catch(() => {}).finally(() => setLoading(false));
     api.get(`${API}/groups`).then(res => { if (res.data.success) setGroups(res.data.groups || []); }).catch(() => {});
+    api.get(`${API}/vehicles/capabilities`).then(res => { if (res.data.success) setCaps(res.data.records || {}); }).catch(() => {});
     fetchGarage();
   }, [fetchGarage]);
 
@@ -578,6 +680,7 @@ export const VehiclesTab = ({ data }) => {
             <tr className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 border-b border-gray-100">
               <th className="px-4 py-3 text-left">Véhicule</th>
               <th className="px-4 py-3 text-left">Kilométrage</th>
+              <th className="px-4 py-3 text-left">Carburant</th>
               <th className="px-4 py-3 text-left">Responsable</th>
               <th className="px-4 py-3 text-left">Leasing</th>
               <th className="px-4 py-3 text-left">Assurance</th>
@@ -603,12 +706,13 @@ export const VehiclesTab = ({ data }) => {
                         <div className="w-14 h-10 rounded-lg bg-gray-50 border border-gray-200 flex items-center justify-center shrink-0"><Truck size={15} className="text-gray-400" /></div>
                       )}
                       <div>
-                        <div className="font-medium text-gray-900">{v.label}</div>
+                        <div className="font-medium text-gray-900 flex items-center gap-2">{v.label} <MotorBadge motor={caps[String(v.tracker_id)]?.motorisation} testId={`motor-badge-${v.tracker_id}`} /></div>
                         <div className="text-[10px] text-gray-400">{subline}</div>
                       </div>
                     </div>
                   </td>
                   <td className="px-4 py-3 text-xs text-gray-600 tabular-nums">{fmtKm(v.total_odometer)}</td>
+                  <td className="px-4 py-3 text-xs"><FuelLevel cap={caps[String(v.tracker_id)]} testId={`fuel-level-${v.tracker_id}`} /></td>
                   <td className="px-4 py-3 text-xs text-gray-600">{g.responsable || <span className="text-gray-300">—</span>}</td>
                   <td className="px-4 py-3"><Badge date={(v.rec.leasing || {}).date_fin} testId={`badge-leasing-${v.tracker_id}`} /></td>
                   <td className="px-4 py-3"><Badge date={gv?.liability_insurance_valid_till || (v.rec.assurance || {}).date_fin} testId={`badge-assurance-${v.tracker_id}`} /></td>
@@ -639,6 +743,7 @@ export const VehiclesTab = ({ data }) => {
               garageVehicle={garage.linked[String(selected)] || null}
               unlinkedGarage={garage.unlinked}
               groupName={groupTitle[groupIdByTid[selected]]}
+              capability={caps[String(selected)] || null}
               onClose={() => setSelected(null)} onSaved={onSaved} onGarageSaved={onGarageSaved}
               onLinkChanged={fetchGarage} />
           </>
