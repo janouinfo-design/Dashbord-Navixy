@@ -261,6 +261,10 @@ Vue generale | Analyse flotte | Conducteurs | Vehicules | Couts | IoT | (Audit v
   - Valide reel: Techlift 37 (fuel_level 3, vin 4), FlexMobil 52 (Zoe=zero EV fictif, Prius DTC P0A80 STALE, Porto 93% AVAILABLE, Tigizirt avl_io_49 unverified), exports PDF/CSV ok, config fuel restauree
   - Tests: /app/backend/tests/test_capabilities.py (18) + non-regression access_link (30)
   - Decisions assumees: tracker 'just_registered' avec odometer 0.0 renvoye tel quel par Navixy (valeur reelle API) ; obd_consumption jamais affiche en L/100 ni utilise en couts
+- [x] **Vue generale multi-energie (EnergySection)** (2026-06, iteration_22 — 100% backend+frontend):
+  - EnergySection.jsx (nouveau, rendu en ROW 4 d'OverviewTab): bloc Energie flotte (thermique/electrique/hybride/inconnu via capabilities.motorisation), Alertes energie (carburant faible < FUEL_LOW_THRESHOLD_PCT=20 backend centralise vs 'sans donnee exploitable' — jamais confondus), 4 tuiles cliquables (hors ligne, sous-utilises, forte utilisation, echeances <=30j depuis vehicle_admin), Drawer drill-down → fiche vehicule (DashboardLayout vehicleToOpen → VehiclesTab initialSelected)
+  - Compte drawer == KPI verifie sur 6 populations ; tuiles a 0 desactivees ; 0 appel Navixy supplementaire (GET capabilities cache 6h + /vehicles/admin Mongo) ; responsive 1920/1366/820 ok ; bloc Couts intouche (choix user 2c)
+  - Correctif post-test: fuel_low_threshold_pct injecte aussi sur reponse cache
 - [ ] Phase 3 (a valider): exploitation fuel_level dans Analyse/couts, historique sensor graphiques, EV quand vehicule reel compatible
 - [ ] Integration Baubit (P2)
 - [ ] Responsive mobile/tablette complet (P2)

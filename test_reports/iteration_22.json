@@ -1,0 +1,37 @@
+{
+  "summary": "Phase EnergySection (Vue générale multi-énergie) — full frontend + targeted backend validation. Backend regression: 48/48 pytest passed (test_access_link.py + test_capabilities.py, 81s). GET /api/vehicles/capabilities on fresh scan returns fuel_low_threshold_pct=20 (verified via ?refresh=true, tenant='default', 37 records). 2nd call served from cache in ~77ms (no re-scan). Frontend (Playwright, super-admin admin@logitrak.ch → Clients → FlexMobil → 'Aperçu client'): energy-section renders correctly. FlexMobil counts: energy-mix thermique=36 (enabled), electrique=0 (disabled), hybride=0 (disabled), inconnu=16 (enabled) — total = 52 vehicles ✓. Alerts: alert-fuel-low=0 (disabled, expected — no vehicle <20%), alert-no-energy=34 (enabled). Threshold '20 %' visible in the alerts header. KPIs: kpi-offline=40 (enabled), kpi-underused=3, kpi-highuse=11, kpi-deadlines=0 (disabled). Drill-down validated for all 6 clickable populations — drawer item count strictly equals KPI value in every case: mix-thermique 36=36 ✓, mix-inconnu 16=16 ✓, alert-no-energy 34=34 ✓, kpi-offline 40=40 ✓, kpi-underused 3=3 ✓, kpi-highuse 11=11 ✓. Zero tiles (electrique, hybride, alert-fuel-low, kpi-deadlines) properly disabled. Drill → fiche verified: clicking drawer-vehicle-3467688 switched to Véhicules tab AND opened the VehicleSheet with capabilities-panel visible ✓. No '0 %' fabricated for vehicles without sensor (verified alert-no-energy items carry sub='Aucune donnée énergie exploitable (capteur absent)'). Techlift ('default' tenant, via impersonation): energy-section renders, thermique=27, inconnu=10 (=37 ✓), electrique=0, hybride=0, alert-fuel-low=0, alert-no-energy=34, no crash, no EV KPI. test-beta isolation (admin@test-beta.local, fake Navixy hash): dashboard loads with 0 vehicles empty state (0 véhicules — 0 en ligne — 0 km), energy-section NOT rendered (correctly gated by vehicles.length), no crash, no fabricated numbers, no cross-tenant leak. Responsive: screenshots captured at 1920x1080, 1366x768, 820x1180 — no horizontal scroll on tablet, energy-mix collapses to 2 columns (grid-cols-2 sm:grid-cols-4). Impersonation session ended cleanly via 'Retour Super Admin' button. Console errors observed are the expected 401/403 during unauthenticated bootstrap fetches — no functional errors during the flows.",
+  "backend_issues": {
+    "critical": [],
+    "minor": [
+      {"endpoint": "/api/vehicles/capabilities", "issue": "Documents cached in Mongo (vehicle_capabilities collection) BEFORE the fuel_low_threshold_pct feature landed do not carry that key. On cache-hit reads (within 6h TTL) the response therefore omits fuel_low_threshold_pct. Any ?refresh=true (or natural TTL expiry) resolves it and re-persists the field. Frontend already has `caps?.fuel_low_threshold_pct ?? 20` fallback so UI is not affected. Optional: run a one-off migration/refresh to backfill cached docs."}
+    ]
+  },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_capabilities.py",
+    "/app/backend/tests/test_access_link.py",
+    "/app/test_reports/energy_desktop_1920.png",
+    "/app/test_reports/energy_laptop_1366.png",
+    "/app/test_reports/energy_tablet_820.png",
+    "/app/test_reports/vehicle_sheet.png"
+  ],
+  "action_items": [
+    "OPTIONAL/MINOR: consider forcing a one-shot capabilities refresh (or backfill migration) so already-cached scans include fuel_low_threshold_pct=20 immediately — frontend fallback already covers this."
+  ],
+  "critical_code_review_comments": [
+    "EnergySection.jsx line 82 uses `data.efficiency?.vehicles` but the parent must pass a `data` object shaped with { stats:{vehicles:[]}, efficiency:{vehicles:[]} }; verify all callers still provide that shape when the endpoint response changes.",
+    "In-cache legacy documents can drift from the code contract (e.g., missing fuel_low_threshold_pct). Consider stamping a schema version in each scan doc and invalidating older versions on read."
+  ],
+  "updated_files": [],
+  "success_rate": {"backend": "100% (48/48 pytest + fresh /capabilities returns fuel_low_threshold_pct=20 + cache 2nd call ~77ms)", "frontend": "100% (energy-section render + 6/6 drill-downs strict equality + drill→fiche + zero-tile disable + Techlift + test-beta isolation + responsive 1920/1366/820)"},
+  "seed_data_creation": "None. Two impersonation sessions opened (FlexMobil, Techlift) and each ended via 'Retour Super Admin'. One /api/vehicles/capabilities?refresh=true was forced by the test to validate the fuel_low_threshold_pct payload — this only rewrote the tenant='default' cache doc with the same data plus the new field.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": false,
+  "test_credentials": "See /app/memory/test_credentials.md — admin@logitrak.ch (SUPER_ADMIN) + admin@test-beta.local (fake Navixy hash — expected behaviour, empty dashboard).",
+  "context_for_next_testing_agent": "EnergySection is fully green. Data-testids exposed: energy-section, energy-mix, energy-mix-{thermique|electrique|hybride|inconnu}, energy-alerts, alert-fuel-low, alert-no-energy, watch-kpis, kpi-{offline|underused|highuse|deadlines}, kpi-drawer, kpi-drawer-close, drawer-vehicle-{tid}. Impersonation entrypoint stays: super-admin/clients → click client row → 'Aperçu client' button. Note: super-admin's direct fetch to /api/vehicles/capabilities (without an active impersonation) resolves to tenant='default' (Techlift, 37 records).",
+  "rca_of_the_issue": "N/A — no functional failure. The single minor observation is a stale-cache field-omission (documents persisted before the fuel_low_threshold_pct feature landed). Root cause: `_get_map` reads whole cached doc verbatim, so any new top-level fields added to the scan response only appear after the next refresh. Mitigation: schema-version stamp + invalidation on version bump, or a one-off ?refresh=true per tenant."
+}

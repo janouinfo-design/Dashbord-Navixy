@@ -21,6 +21,10 @@ logger = logging.getLogger(__name__)
 FRESH_HOURS = 48
 SCAN_TTL_SECONDS = 6 * 3600  # capacités re-scannées au plus toutes les 6h (changent rarement)
 
+# Seuil métier "carburant faible" (%) — constante centralisée (validée utilisateur, choix 1a).
+# Utilisée par la Vue générale ; exposée dans la réponse /vehicles/capabilities pour le frontend.
+FUEL_LOW_THRESHOLD_PCT = 20
+
 # input_name Navixy vérifié → (clé capability, unité, unité_vérifiée)
 KNOWN_INPUTS = {
     "obd_fuel": ("fuel_level", "%", True),
@@ -193,6 +197,7 @@ def create_capabilities_router(db, navixy, cache, get_tenant_context):
 
         return {"success": True, "tenant": tenant, "records": records, "partial": partial,
                 "scanned_at": _now().isoformat(),
+                "fuel_low_threshold_pct": FUEL_LOW_THRESHOLD_PCT,
                 "freshness_rule": f"AVAILABLE si update_time < {FRESH_HOURS}h, sinon STALE"}
 
     async def _get_map(navixy_hash: str, tenant: str, refresh: bool) -> dict:
@@ -215,7 +220,10 @@ def create_capabilities_router(db, navixy, cache, get_tenant_context):
     @router.get("/capabilities")
     async def all_capabilities(request: Request, refresh: bool = False):
         h, tenant = await get_tenant_context(request)
-        return await _get_map(h, tenant, refresh)
+        data = await _get_map(h, tenant, refresh)
+        if data.get("success"):
+            data["fuel_low_threshold_pct"] = FUEL_LOW_THRESHOLD_PCT
+        return data
 
     @router.get("/{tracker_id}/capabilities")
     async def one_capability(tracker_id: int, request: Request):

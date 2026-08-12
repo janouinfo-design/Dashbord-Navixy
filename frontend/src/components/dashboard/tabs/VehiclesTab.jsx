@@ -578,12 +578,16 @@ const VehicleSheet = ({ vehicle, record, garageVehicle, unlinkedGarage, groupNam
 };
 
 // ═══════════════ MAIN ═══════════════
-export const VehiclesTab = ({ data }) => {
+export const VehiclesTab = ({ data, initialSelected, onConsumedInitial }) => {
   const { stats, efficiency } = data;
   const [search, setSearch] = useState("");
   const [records, setRecords] = useState({});
   const [loading, setLoading] = useState(true);
   const [selected, setSelected] = useState(null);
+
+  useEffect(() => {
+    if (initialSelected) { setSelected(initialSelected); onConsumedInitial?.(); }
+  }, [initialSelected]); // eslint-disable-line react-hooks/exhaustive-deps
   const [groups, setGroups] = useState([]);
   const [garage, setGarage] = useState({ linked: {}, unlinked: [], ok: false });
   const [syncing, setSyncing] = useState(false);

@@ -27,6 +27,7 @@ const ADMIN_TAB = { id: "audit", label: "Audit", icon: ShieldCheck };
 
 export const DashboardLayout = () => {
   const [activeTab, setActiveTab] = useState("overview");
+  const [vehicleToOpen, setVehicleToOpen] = useState(null);
   const [data, setData] = useState({});
   const [loading, setLoading] = useState(true);
   const [lastUpdate, setLastUpdate] = useState(null);
@@ -165,10 +166,11 @@ export const DashboardLayout = () => {
           </div>
         ) : (
           <>
-            {activeTab === "overview" && <OverviewTab data={data} debugMode={debugMode} fromDate={fromDate} toDate={toDate} onNavigate={handleTabNavigate} />}
+            {activeTab === "overview" && <OverviewTab data={data} debugMode={debugMode} fromDate={fromDate} toDate={toDate} onNavigate={handleTabNavigate}
+              onOpenVehicle={(tid) => { setVehicleToOpen(tid); setActiveTab("vehicles"); }} />}
             {activeTab === "analyse" && <AnalyseFlotteTab data={data} fromDate={fromDate} toDate={toDate} debugMode={debugMode} />}
             {activeTab === "drivers" && <DriversTab data={data} fromDate={fromDate} toDate={toDate} debugMode={debugMode} />}
-            {activeTab === "vehicles" && <VehiclesTab data={data} debugMode={debugMode} />}
+            {activeTab === "vehicles" && <VehiclesTab data={data} debugMode={debugMode} initialSelected={vehicleToOpen} onConsumedInitial={() => setVehicleToOpen(null)} />}
             {activeTab === "audit" && <AuditTab fromDate={fromDate} toDate={toDate} />}
           </>
         )}

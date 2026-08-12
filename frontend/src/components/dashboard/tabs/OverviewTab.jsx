@@ -8,6 +8,7 @@ import {
   ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip,
   ResponsiveContainer, Legend, AreaChart, Area, PieChart, Pie, Cell
 } from "recharts";
+import { EnergySection } from "./EnergySection";
 
 // ═══ Categories — same source of truth as Analyse flotte ═══
 const CATEGORIES = [
@@ -81,7 +82,7 @@ const Delta = ({ curr, prev, unit = "", goodWhenUp, prevPeriod, testId }) => {
   );
 };
 
-export const OverviewTab = ({ data, fromDate, toDate, onNavigate }) => {
+export const OverviewTab = ({ data, fromDate, toDate, onNavigate, onOpenVehicle }) => {
   const { stats, trends, efficiency } = data;
   const vehicles = stats?.vehicles || [];
   const effVehicles = efficiency?.vehicles || [];
@@ -494,6 +495,9 @@ export const OverviewTab = ({ data, fromDate, toDate, onNavigate }) => {
           </Panel>
         </div>
       </div>
+
+      {/* ═══ ROW 4 — énergie flotte / alertes / populations cliquables ═══ */}
+      <EnergySection data={data} onOpenVehicle={onOpenVehicle} />
 
       {/* ═══ Source footer ═══ */}
       <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 rounded-xl border border-gray-200">
