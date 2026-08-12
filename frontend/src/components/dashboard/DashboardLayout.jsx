@@ -122,7 +122,7 @@ export const DashboardLayout = () => {
           onApply={handlePeriodApply} />
       </Header>
 
-      <div className="sticky top-16 z-20 bg-white border-b border-gray-200" data-testid="dashboard-tabs">
+      <div className="sticky top-16 z-[60] bg-white border-b border-gray-200" data-testid="dashboard-tabs">
         <div className="max-w-[1600px] mx-auto px-4 lg:px-8">
           <div className="flex items-center gap-0 overflow-x-auto scrollbar-hide -mb-px">
             {visibleTabs.map((tab) => {

@@ -392,7 +392,10 @@ export const OverviewTab = ({ data, fromDate, toDate, onNavigate, onOpenVehicle 
         </Panel>
       </div>
 
-      {/* ═══ ROW 3 — anomalies / conducteurs eco / actions + snapshot ═══ */}
+      {/* ═══ ROW 3 — énergie flotte / alertes / populations cliquables ═══ */}
+      <EnergySection data={data} onOpenVehicle={onOpenVehicle} />
+
+      {/* ═══ ROW 4 — anomalies / conducteurs eco / actions + snapshot ═══ */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
         {/* Anomalies */}
         <Panel title="Anomalies & alertes" testId="panel-anomalies" className="lg:col-span-4">
@@ -495,9 +498,6 @@ export const OverviewTab = ({ data, fromDate, toDate, onNavigate, onOpenVehicle 
           </Panel>
         </div>
       </div>
-
-      {/* ═══ ROW 4 — énergie flotte / alertes / populations cliquables ═══ */}
-      <EnergySection data={data} onOpenVehicle={onOpenVehicle} />
 
       {/* ═══ Source footer ═══ */}
       <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 rounded-xl border border-gray-200">

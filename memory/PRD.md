@@ -265,6 +265,12 @@ Vue generale | Analyse flotte | Conducteurs | Vehicules | Couts | IoT | (Audit v
   - EnergySection.jsx (nouveau, rendu en ROW 4 d'OverviewTab): bloc Energie flotte (thermique/electrique/hybride/inconnu via capabilities.motorisation), Alertes energie (carburant faible < FUEL_LOW_THRESHOLD_PCT=20 backend centralise vs 'sans donnee exploitable' — jamais confondus), 4 tuiles cliquables (hors ligne, sous-utilises, forte utilisation, echeances <=30j depuis vehicle_admin), Drawer drill-down → fiche vehicule (DashboardLayout vehicleToOpen → VehiclesTab initialSelected)
   - Compte drawer == KPI verifie sur 6 populations ; tuiles a 0 desactivees ; 0 appel Navixy supplementaire (GET capabilities cache 6h + /vehicles/admin Mongo) ; responsive 1920/1366/820 ok ; bloc Couts intouche (choix user 2c)
   - Correctif post-test: fuel_low_threshold_pct injecte aussi sur reponse cache
+- [x] **Iteration 23 — Audit final Vue generale** (2026-06, iteration_23 : VALIDE APRES CORRECTIONS):
+  - Audit testing agent: hierarchie A→E ok apres reorder (Energie avant Eco/Anomalies), 6/6 drill-downs stricts, plaques (reg_number ajoute aux capabilities + drawers), multi-energie conforme (Zoe dans 'inconnu' sans EV), 0 appel reseau a l'ouverture des drawers, responsive 1920/1366/1024 sans scroll horizontal, pytest 48/48
+  - 2 reserves corrigees et re-verifiees E2E: (1) header/tabs passes z-[60] + sheets/drawers z-[70], backdrop z-40 → navigation toujours cliquable pendant fiche ouverte (changement d'onglet demonte l'overlay) ; (2) tuiles 'A surveiller' a 0 en opacity-50
+  - Doublon assume (documente): cartes Anomalies (texte+recommandations) vs tuiles A surveiller (drill-down) — roles differents, non supprime
+  - Echeances: documents echus restent visibles ('echu' rouge) dans le drawer
+- [ ] PROCHAIN CHANTIER VALIDE PAR USER: module Conducteurs & Eco-conduite (prioritaire sur historique carburant)
 - [ ] Phase 3 (a valider): exploitation fuel_level dans Analyse/couts, historique sensor graphiques, EV quand vehicule reel compatible
 - [ ] Integration Baubit (P2)
 - [ ] Responsive mobile/tablette complet (P2)

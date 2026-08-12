@@ -114,6 +114,7 @@ def create_capabilities_router(db, navixy, cache, get_tenant_context):
             rec = {
                 "tracker_id": tid,
                 "label": t.get("label"),
+                "reg_number": gv.get("reg_number") or None,
                 "device_model": t.get("source", {}).get("model"),
                 "motorisation": {"normalized": motor, "source": motor_source,
                                  "navixy_fuel_type": gv.get("fuel_type"), "override": override},

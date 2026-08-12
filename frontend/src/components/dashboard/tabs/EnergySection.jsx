@@ -27,7 +27,7 @@ const within30d = (ds) => {
 const Drawer = ({ title, items, onClose, onOpenVehicle }) => (
   <>
     <div className="fixed inset-0 bg-black/20 z-40" onClick={onClose} />
-    <div className="fixed inset-y-0 right-0 w-full sm:w-[420px] bg-white shadow-2xl z-50 overflow-y-auto" data-testid="kpi-drawer">
+    <div className="fixed inset-y-0 right-0 w-full sm:w-[420px] bg-white shadow-2xl z-[70] overflow-y-auto" data-testid="kpi-drawer">
       <div className="sticky top-0 bg-white border-b border-gray-200 px-5 py-4 flex items-center justify-between">
         <div>
           <h4 className="text-sm font-semibold text-gray-900">{title}</h4>
@@ -58,7 +58,7 @@ const Drawer = ({ title, items, onClose, onOpenVehicle }) => (
 
 const KpiTile = ({ label, value, sub, icon: Icon, onClick, testId, accent }) => (
   <button onClick={onClick} disabled={!onClick}
-    className={`text-left bg-white rounded-xl border border-gray-200 p-4 transition-all ${onClick ? "hover:border-gray-300 hover:shadow-sm cursor-pointer" : "cursor-default"}`}
+    className={`text-left bg-white rounded-xl border border-gray-200 p-4 transition-all ${onClick ? "hover:border-gray-300 hover:shadow-sm cursor-pointer" : "opacity-50 cursor-default"}`}
     data-testid={testId}>
     <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">
       {Icon && <Icon size={11} className={accent || ""} />}{label}
@@ -74,7 +74,7 @@ export const EnergySection = ({ data, onOpenVehicle }) => {
   const [drawer, setDrawer] = useState(null);
 
   useEffect(() => {
-    api.get(`${API}/vehicles/capabilities`).then(r => { if (r.data.success) setCaps(r.data); }).catch(() => {});
+    api.get(`${API}/vehicles/capabilities`).then(r => setCaps(r.data.success ? r.data : { success: false })).catch(() => setCaps({ success: false }));
     api.get(`${API}/vehicles/admin`).then(r => { if (r.data.success) setAdminRecs(r.data.records || {}); }).catch(() => {});
   }, []);
 
@@ -88,21 +88,28 @@ export const EnergySection = ({ data, onOpenVehicle }) => {
     const fuelLow = [], noEnergy = [];
     for (const v of vehicles) {
       const c = recs[String(v.tracker_id)];
-      const item = { tid: v.tracker_id, label: v.label };
+      const plate = c?.reg_number ? `${c.reg_number} · ` : "";
+      const item = { tid: v.tracker_id, label: v.label, sub: c?.reg_number || undefined };
       mix[energyOf(c?.motorisation)].push(item);
       const fl = c?.capabilities?.fuel_level;
       if (fl?.available && typeof fl.value === "number") {
         if (fl.value < threshold)
           fuelLow.push({ ...item, value: `${Math.round(fl.value)} %`, valueCls: "text-red-600",
-                         sub: fl.status === "STALE" ? `Donnée ancienne (${fl.update_time})` : `MAJ ${fl.update_time}` });
+                         sub: `${plate}${fl.status === "STALE" ? `Donnée ancienne (${fl.update_time})` : `MAJ ${fl.update_time}`}` });
       } else {
-        noEnergy.push({ ...item, sub: "Aucune donnée énergie exploitable (capteur absent)" });
+        noEnergy.push({ ...item, sub: `${plate}Aucune donnée énergie exploitable (capteur absent)` });
       }
     }
     const offline = vehicles.filter(v => v.connection_status !== "active")
-      .map(v => ({ tid: v.tracker_id, label: v.label, sub: v.last_update ? `Dernier signal : ${v.last_update}` : "Jamais connecté" }));
+      .map(v => {
+        const plate = recs[String(v.tracker_id)]?.reg_number;
+        return { tid: v.tracker_id, label: v.label, sub: `${plate ? plate + " · " : ""}${v.last_update ? `Dernier signal : ${v.last_update}` : "Jamais connecté"}` };
+      });
     const byCat = (cat) => (data.efficiency?.vehicles || []).filter(v => v.category === cat)
-      .map(v => ({ tid: v.tracker_id, label: v.label, value: `${v.utilization_pct} %`, sub: `${v.active_days}/${v.total_days} jours actifs · ${v.period_mileage} km` }));
+      .map(v => {
+        const plate = recs[String(v.tracker_id)]?.reg_number;
+        return { tid: v.tracker_id, label: v.label, value: `${v.utilization_pct} %`, sub: `${plate ? plate + " · " : ""}${v.active_days}/${v.total_days} jours actifs · ${v.period_mileage} km` };
+      });
     const deadlines = [];
     for (const [tid, rec] of Object.entries(adminRecs)) {
       const label = vehicles.find(v => String(v.tracker_id) === tid)?.label || `Véhicule ${tid}`;
@@ -126,7 +133,8 @@ export const EnergySection = ({ data, onOpenVehicle }) => {
         {/* Énergie flotte */}
         <div className="bg-white rounded-xl border border-gray-200 p-5" data-testid="energy-mix">
           <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-3">Énergie flotte</div>
-          {!caps ? <div className="text-xs text-gray-400">Chargement des capacités…</div> : (
+          {!caps ? <div className="text-xs text-gray-400">Chargement des capacités…</div> :
+           caps.success === false ? <div className="text-xs text-gray-400">Capacités indisponibles pour le moment.</div> : (
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
               {Object.entries(ENERGY_META).map(([k, meta]) => (
                 <button key={k} onClick={() => open(`Énergie : ${meta.label}`, m.mix[k])} disabled={!m.mix[k].length}
@@ -145,7 +153,8 @@ export const EnergySection = ({ data, onOpenVehicle }) => {
         {/* Alertes énergie */}
         <div className="bg-white rounded-xl border border-gray-200 p-5" data-testid="energy-alerts">
           <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-3">Alertes énergie <span className="normal-case font-normal">(seuil faible : {threshold} %)</span></div>
-          {!caps ? <div className="text-xs text-gray-400">Chargement…</div> : (
+          {!caps ? <div className="text-xs text-gray-400">Chargement…</div> :
+           caps.success === false ? <div className="text-xs text-gray-400">Capacités indisponibles pour le moment.</div> : (
             <div className="space-y-1.5">
               <button onClick={() => open(`Carburant faible (< ${threshold} %)`, m.fuelLow)} disabled={!m.fuelLow.length}
                 className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs ${m.fuelLow.length ? "bg-red-50 text-red-700 hover:bg-red-100" : "bg-gray-50 text-gray-400"}`}
@@ -166,7 +175,9 @@ export const EnergySection = ({ data, onOpenVehicle }) => {
       </div>
 
       {/* À surveiller — populations cliquables */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3" data-testid="watch-kpis">
+      <div>
+        <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-2 px-0.5">À surveiller</div>
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3" data-testid="watch-kpis">
         <KpiTile label="Hors ligne" value={m.offline.length} icon={WifiOff} accent="text-red-400" testId="kpi-offline"
           onClick={m.offline.length ? () => open("Véhicules hors ligne", m.offline) : undefined} sub="instantané" />
         <KpiTile label="Sous-utilisés" value={m.sousUtilises.length} icon={Gauge} accent="text-orange-400" testId="kpi-underused"
@@ -175,6 +186,7 @@ export const EnergySection = ({ data, onOpenVehicle }) => {
           onClick={m.fortement.length ? () => open("Forte utilisation (≥ 85 %)", m.fortement) : undefined} sub="sur la période" />
         <KpiTile label="Échéances ≤ 30 j" value={m.deadlines.length} icon={CalendarClock} accent="text-amber-500" testId="kpi-deadlines"
           onClick={m.deadlines.length ? () => open("Documents & contrôles à échéance", m.deadlines) : undefined} sub="leasing · assurance · contrôles" />
+        </div>
       </div>
 
       {drawer && <Drawer title={drawer.title} items={drawer.items} onClose={() => setDrawer(null)} onOpenVehicle={(tid) => { setDrawer(null); onOpenVehicle?.(tid); }} />}
