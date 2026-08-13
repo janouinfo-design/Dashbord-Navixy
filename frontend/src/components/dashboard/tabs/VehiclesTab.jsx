@@ -3,7 +3,7 @@ import { API, api } from "@/lib/api";
 import {
   Truck, Search, ChevronRight, X, Pencil, Check, Plus, Trash2,
   FileText, Download, Upload, Hash, Gauge, Radio, ShieldCheck,
-  CreditCard, ClipboardList, FolderOpen, Car, Loader2, Camera, RefreshCw
+  CreditCard, ClipboardList, FolderOpen, Car, Loader2, Camera, RefreshCw, PlugZap
 } from "lucide-react";
 
 // ─── Échéances : rouge = échu, orange < 30 j, vert sinon ───
@@ -757,7 +757,13 @@ export const VehiclesTab = ({ data, initialSelected, onConsumedInitial }) => {
                         <div className="w-14 h-10 rounded-lg bg-gray-50 border border-gray-200 flex items-center justify-center shrink-0"><Truck size={15} className="text-gray-400" /></div>
                       )}
                       <div>
-                        <div className="font-medium text-gray-900 flex items-center gap-2">{v.label} <MotorBadge motor={caps[String(v.tracker_id)]?.motorisation} testId={`motor-badge-${v.tracker_id}`} /></div>
+                        <div className="font-medium text-gray-900 flex items-center gap-2">{v.label}
+                          {caps[String(v.tracker_id)]?.capabilities?.ev_charging_state?.value === "charging" && (
+                            <span title="Recharge en cours" data-testid={`charging-icon-${v.tracker_id}`}>
+                              <PlugZap size={14} className="text-emerald-500 animate-pulse" />
+                            </span>
+                          )}
+                          <MotorBadge motor={caps[String(v.tracker_id)]?.motorisation} testId={`motor-badge-${v.tracker_id}`} /></div>
                         <div className="text-[10px] text-gray-400">{subline}</div>
                       </div>
                     </div>
