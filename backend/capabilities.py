@@ -34,13 +34,20 @@ KNOWN_INPUTS = {
 
 # Familles EV préparées — aucun input Navixy vérifié à ce jour (liste volontairement vide)
 EV_KEYS = ("ev_soc", "ev_range", "ev_energy_consumed", "ev_kwh_per_100km",
-           "ev_charging_state", "ev_charging_power", "ev_energy_charged")
+           "ev_charging_state", "ev_charging_power", "ev_energy_charged",
+           "ev_battery_capacity", "ev_battery_temp")
 EV_VERIFIED_INPUTS = {
     # Inputs émis UNIQUEMENT par le simulateur DEMO — aucun tracker réel n'utilise ces noms.
     # Tout input EV réel devra être validé sur véhicule avant ajout.
     "ev_battery_level": ("ev_soc", "%", True),
     "ev_range": ("ev_range", "km", True),
     "ev_charging_state": ("ev_charging_state", None, True),
+    "ev_kwh_per_100": ("ev_kwh_per_100km", "kWh/100 km", True),
+    "ev_energy_consumed": ("ev_energy_consumed", "kWh", True),
+    "ev_battery_capacity": ("ev_battery_capacity", "kWh", True),
+    "ev_charging_power": ("ev_charging_power", "kW", True),
+    "ev_energy_charged": ("ev_energy_charged", "kWh", True),
+    "ev_battery_temp": ("ev_battery_temp", "°C", True),
 }
 
 AMBIGUOUS_INPUTS = ("obd_absolute_load_value",)  # charge MOTEUR OBD, pas batterie

@@ -157,6 +157,24 @@ export const EnergySection = ({ data, onOpenVehicle }) => {
             </div>
           )}
           <p className="text-[9px] text-gray-400 mt-2">Source : motorisation garage + correction LOGITRAK (capabilities). Aucune classification automatique par nom.</p>
+          {(() => {
+            const recs = caps?.records || {};
+            const socs = [], kwh = [];
+            for (const r of Object.values(recs)) {
+              const c = r.capabilities || {};
+              if (c.ev_soc?.available && typeof c.ev_soc.value === "number") socs.push(c.ev_soc.value);
+              if (c.ev_kwh_per_100km?.available && typeof c.ev_kwh_per_100km.value === "number") kwh.push(c.ev_kwh_per_100km.value);
+            }
+            if (!socs.length) return null;
+            const avg = (a) => a.reduce((s, x) => s + x, 0) / a.length;
+            return (
+              <div className="mt-2 flex flex-wrap gap-2 text-[11px]" data-testid="ev-summary">
+                <span className="px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 font-medium">⚡ SoC moyen : {Math.round(avg(socs))} %</span>
+                {kwh.length > 0 && <span className="px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 font-medium">Conso moyenne : {avg(kwh).toFixed(1)} kWh/100 km</span>}
+                <span className="px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700">{socs.length} EV avec télémétrie batterie</span>
+              </div>
+            );
+          })()}
         </div>
 
         {/* Alertes énergie */}

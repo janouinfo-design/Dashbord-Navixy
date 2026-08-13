@@ -105,12 +105,15 @@ const CapabilitiesPanel = ({ cap }) => {
       </div>
       {evDetected && (
         <div className="mt-3 grid grid-cols-3 gap-2" data-testid="ev-values">
-          {[["ev_soc", "Batterie traction"], ["ev_range", "Autonomie"], ["ev_charging_state", "Recharge"]].map(([k, lbl]) => {
+          {[["ev_soc", "Batterie traction"], ["ev_range", "Autonomie"], ["ev_charging_state", "Recharge"],
+            ["ev_kwh_per_100km", "Conso moyenne"], ["ev_energy_consumed", "Énergie consommée"], ["ev_battery_capacity", "Capacité batterie"],
+            ["ev_charging_power", "Puissance charge"], ["ev_energy_charged", "Dernière recharge"], ["ev_battery_temp", "Temp. batterie"]]
+            .filter(([k]) => caps[k]?.available).map(([k, lbl]) => {
             const c = caps[k];
             const CHARGE_LABELS = { charging: "En charge", plugged_not_charging: "Branché", disconnected: "Débranché" };
-            const val = !c?.available || c.value == null ? "—"
+            const val = c.value == null ? "—"
               : k === "ev_charging_state" ? (CHARGE_LABELS[c.value] || c.value)
-              : `${Math.round(c.value)} ${c.unit || ""}`;
+              : `${k === "ev_kwh_per_100km" || k === "ev_battery_temp" ? Number(c.value).toFixed(1) : Math.round(c.value).toLocaleString("fr-CH")} ${c.unit || ""}`;
             return (
               <div key={k} className="rounded-lg bg-emerald-50/50 border border-emerald-100 px-2.5 py-2" data-testid={`ev-${k}`}>
                 <div className="text-[9px] uppercase tracking-wide text-emerald-700/70">{lbl}</div>

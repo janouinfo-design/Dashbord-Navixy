@@ -73,6 +73,10 @@ def _day_km(tid: int, d) -> float:
     return round(18 + _rand(tid, "km", d.isoformat()) * 70, 1)
 
 
+def _kwh100(tid: int) -> float:
+    return round(14 + _rand(tid, "eff") * 6, 1)
+
+
 def _sensors(tid: int):
     v = _BY_TID[tid]
     out = []
@@ -81,6 +85,12 @@ def _sensors(tid: int):
             {"id": tid * 10 + 1, "name": "Batterie de traction (SoC)", "input_name": "ev_battery_level", "type": "metering", "units": "%"},
             {"id": tid * 10 + 2, "name": "Autonomie restante EV", "input_name": "ev_range", "type": "metering", "units": "km"},
             {"id": tid * 10 + 3, "name": "État de recharge", "input_name": "ev_charging_state", "type": "metering", "units": ""},
+            {"id": tid * 10 + 5, "name": "Consommation moyenne", "input_name": "ev_kwh_per_100", "type": "metering", "units": "kWh/100km"},
+            {"id": tid * 10 + 6, "name": "Énergie consommée (total)", "input_name": "ev_energy_consumed", "type": "metering", "units": "kWh"},
+            {"id": tid * 10 + 7, "name": "Capacité batterie", "input_name": "ev_battery_capacity", "type": "metering", "units": "kWh"},
+            {"id": tid * 10 + 8, "name": "Puissance de charge", "input_name": "ev_charging_power", "type": "metering", "units": "kW"},
+            {"id": tid * 10 + 9, "name": "Température batterie", "input_name": "ev_battery_temp", "type": "metering", "units": "°C"},
+            {"id": tid * 10, "name": "Énergie dernière recharge", "input_name": "ev_energy_charged", "type": "metering", "units": "kWh"},
         ]
     if v["fuel"] in ("diesel", "phev"):
         out.append({"id": tid * 10 + 4, "name": "OBD : carburant", "input_name": "obd_fuel", "type": "metering", "units": "%"})
@@ -91,6 +101,7 @@ def _readings(tid: int):
     v = _BY_TID[tid]
     now = _now()
     inputs = []
+    odo = v["odo0"] + sum(_day_km(tid, (now - timedelta(days=i)).date()) for i in range(30))
     for s in _sensors(tid):
         inp = s["input_name"]
         if inp == "ev_battery_level":
@@ -100,13 +111,24 @@ def _readings(tid: int):
             val = round(soc / 100 * v["range_max"], 0) if soc is not None else None
         elif inp == "ev_charging_state":
             val = _charging(tid, now)
+        elif inp == "ev_kwh_per_100":
+            val = _kwh100(tid)
+        elif inp == "ev_energy_consumed":
+            val = round(odo * _kwh100(tid) / 100, 1)
+        elif inp == "ev_battery_capacity":
+            val = v["batt_kwh"]
+        elif inp == "ev_charging_power":
+            val = (11.0 if v["batt_kwh"] and v["batt_kwh"] >= 60 else 7.4) if _charging(tid, now) == "charging" else None
+        elif inp == "ev_battery_temp":
+            val = round(18 + (now.hour / 24) * 10 + _rand(tid, "temp", now.strftime("%Y-%m-%d")) * 4, 1)
+        elif inp == "ev_energy_charged":
+            val = round(v["batt_kwh"] * (0.45 + _rand(tid, "chg", now.strftime("%Y-%m-%d")) * 0.3), 1)
         elif inp == "obd_fuel":
             val = round(30 + _rand(tid, "fuel", now.strftime("%Y-%m-%d")) * 60, 1)
         else:
             val = None
         inputs.append({"label": s["name"], "type": "sensor", "value": val,
                        "units": s["units"], "update_time": _ts(now), "sensor_id": s["id"]})
-    odo = v["odo0"] + sum(_day_km(tid, (now - timedelta(days=i)).date()) for i in range(30))
     return {"success": True, "inputs": inputs, "states": [], "virtual_sensors": [],
             "counters": [
                 {"type": "odometer", "value": round(odo, 1), "update_time": _ts(now)},
@@ -132,6 +154,10 @@ def _history(tid: int, sensor_id: int, from_s: str, to_s: str):
             val = round(soc / 100 * v["range_max"], 0) if soc is not None else None
         elif kind == 4:
             val = round(30 + _rand(tid, "fuel", cur.strftime("%Y-%m-%d")) * 60, 1)
+        elif kind == 5:
+            val = _kwh100(tid)
+        elif kind == 9:
+            val = round(18 + (cur.hour / 24) * 10 + _rand(tid, "temp", cur.strftime("%Y-%m-%d")) * 4, 1)
         else:
             val = None
         if val is not None:

@@ -278,6 +278,7 @@ Vue generale | Analyse flotte | Conducteurs | Vehicules | Couts | IoT | (Audit v
   - Frontend: colonne energie ⚡SoC (rouge <20%), bloc valeurs EV dans la fiche (Batterie traction/Autonomie/Recharge + etiquette SIMULATION violette), alerte 'Batterie faible (EV)' + drawer dans EnergySection, bandeau violet 'DONNEES DE DEMONSTRATION' (detecte model=='simulator')
   - EV reels: inchanges (UNAVAILABLE) — pytest 48/48 (1 assertion trop rigide corrigee: Porto fuel 93→76% donnee vivante)
   - ATTENTION connue: search_replace 'succes fantome' constate 3x dans la session (edits non appliques malgre succes) — TOUJOURS re-grep apres edit critique
+  - COMPLEMENT (meme session): simulateur etendu — 9 donnees EV par vehicule (SoC, autonomie, etat recharge, kWh/100, energie consommee totale, capacite batterie, puissance charge, energie derniere recharge, temp batterie) ; EV_KEYS +ev_battery_capacity/+ev_battery_temp ; fiche = 9 tuiles EV etiquetees SIMULATION ; Vue generale = resume 'SoC moyen X% · conso Y kWh/100 · N EV avec telemetrie' (data-testid ev-summary) ; pytest 18/18
 - [ ] PROCHAIN CHANTIER VALIDE PAR USER: module Conducteurs & Eco-conduite (prioritaire sur historique carburant)
 - [ ] Phase 3 (a valider): exploitation fuel_level dans Analyse/couts, historique sensor graphiques, EV quand vehicule reel compatible
 - [ ] Integration Baubit (P2)
