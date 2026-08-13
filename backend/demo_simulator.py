@@ -58,6 +58,8 @@ def _charging(tid: int, dt: datetime) -> str:
     if _BY_TID[tid]["fuel"] == "diesel":
         return None
     h = dt.hour
+    if tid == 900001 and 11 <= h < 16:
+        return "charging"  # Tesla démo : recharge de midi (borne dépôt)
     if 21 <= h or h < 6:
         return "charging"
     if 19 <= h < 21:

@@ -48,11 +48,25 @@ const FuelLevel = ({ cap, testId }) => {
   if (soc?.available && typeof soc.value === "number") {
     const low = soc.value < 20;
     const stale = soc.status === "STALE";
+    const range = cap?.capabilities?.ev_range;
+    const charging = cap?.capabilities?.ev_charging_state?.value;
     return (
-      <span className={`tabular-nums font-medium ${low ? "text-red-600" : stale ? "text-amber-600" : "text-emerald-600"}`} data-testid={testId}
-        title={`Batterie de traction · Source: ${soc.source} · MAJ ${soc.update_time || "?"}`}>
-        ⚡ {Math.round(soc.value)} %{stale && <span className="ml-1 text-[9px] uppercase">ancien</span>}
-      </span>
+      <div data-testid={testId}>
+        <span className={`tabular-nums font-medium ${low ? "text-red-600" : stale ? "text-amber-600" : "text-emerald-600"}`}
+          title={`Batterie de traction · Source: ${soc.source} · MAJ ${soc.update_time || "?"}`}>
+          ⚡ {Math.round(soc.value)} %
+          {range?.available && range.value != null && (
+            <span className="text-gray-500 font-normal"> · {Math.round(range.value)} km</span>
+          )}
+          {stale && <span className="ml-1 text-[9px] uppercase">ancien</span>}
+        </span>
+        {charging === "charging" && (
+          <div className="text-[10px] text-emerald-600 font-semibold animate-pulse" data-testid={`${testId}-charging`}>🔌 En charge</div>
+        )}
+        {charging === "plugged_not_charging" && (
+          <div className="text-[10px] text-gray-500" data-testid={`${testId}-charging`}>🔌 Branché</div>
+        )}
+      </div>
     );
   }
   const fl = cap?.capabilities?.fuel_level;
@@ -717,7 +731,7 @@ export const VehiclesTab = ({ data, initialSelected, onConsumedInitial }) => {
             <tr className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 border-b border-gray-100">
               <th className="px-4 py-3 text-left">Véhicule</th>
               <th className="px-4 py-3 text-left">Kilométrage</th>
-              <th className="px-4 py-3 text-left">Carburant</th>
+              <th className="px-4 py-3 text-left">Énergie</th>
               <th className="px-4 py-3 text-left">Responsable</th>
               <th className="px-4 py-3 text-left">Leasing</th>
               <th className="px-4 py-3 text-left">Assurance</th>
