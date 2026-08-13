@@ -270,6 +270,14 @@ Vue generale | Analyse flotte | Conducteurs | Vehicules | Couts | IoT | (Audit v
   - 2 reserves corrigees et re-verifiees E2E: (1) header/tabs passes z-[60] + sheets/drawers z-[70], backdrop z-40 → navigation toujours cliquable pendant fiche ouverte (changement d'onglet demonte l'overlay) ; (2) tuiles 'A surveiller' a 0 en opacity-50
   - Doublon assume (documente): cartes Anomalies (texte+recommandations) vs tuiles A surveiller (drill-down) — roles differents, non supprime
   - Echeances: documents echus restent visibles ('echu' rouge) dans le drawer
+- [x] **Tenant DEMO EV — 5 vehicules simules** (2026-06, self-test complet + pytest 48/48):
+  - Audit EV prealable (lecture seule): verdict EV DATA NOT AVAILABLE — aucun SoC/kWh/recharge dans les sources reelles (Zoe FlexMobil: OBD muet, seuls tension 12V/GPS/allumage remontent, historique 6min OK). Rapport A-P livre.
+  - Sur demande user: donnees FICTIVES autorisees UNIQUEMENT via tenant demo isole. /app/backend/demo_simulator.py — 5 vehicules (3 BEV Tesla/Zoe/ID.4, 1 PHEV Volvo, 1 diesel Caddy), SoC deterministe (decharge jour/recharge nuit, Zoe demo 16% = batterie faible), km/jour, odometre, historiques 30min, garage complet
+  - Hook UNIQUE: navixy_client.request → si hash dechiffre == 'SIMULATION' → demo_simulator.simulate(). Client Mongo 'demo-ev' (is_test, simulation:true, hash chiffre 'SIMULATION'). AUCUN chemin vers les clients reels
+  - capabilities.py: EV_VERIFIED_INPUTS rempli avec les inputs du SIMULATEUR uniquement (ev_battery_level/ev_range/ev_charging_state — noms inexistants chez Navixy reel), source='simulation:...'
+  - Frontend: colonne energie ⚡SoC (rouge <20%), bloc valeurs EV dans la fiche (Batterie traction/Autonomie/Recharge + etiquette SIMULATION violette), alerte 'Batterie faible (EV)' + drawer dans EnergySection, bandeau violet 'DONNEES DE DEMONSTRATION' (detecte model=='simulator')
+  - EV reels: inchanges (UNAVAILABLE) — pytest 48/48 (1 assertion trop rigide corrigee: Porto fuel 93→76% donnee vivante)
+  - ATTENTION connue: search_replace 'succes fantome' constate 3x dans la session (edits non appliques malgre succes) — TOUJOURS re-grep apres edit critique
 - [ ] PROCHAIN CHANTIER VALIDE PAR USER: module Conducteurs & Eco-conduite (prioritaire sur historique carburant)
 - [ ] Phase 3 (a valider): exploitation fuel_level dans Analyse/couts, historique sensor graphiques, EV quand vehicule reel compatible
 - [ ] Integration Baubit (P2)

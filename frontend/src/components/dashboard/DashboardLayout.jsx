@@ -143,6 +143,18 @@ export const DashboardLayout = () => {
       </div>
 
       {(() => {
+        const vs = data.stats?.vehicles || [];
+        if (!vs.length || !vs.every(v => v.model === "simulator")) return null;
+        return (
+          <div className="bg-purple-50 border-b border-purple-200" data-testid="demo-banner">
+            <div className="max-w-[1600px] mx-auto px-4 lg:px-8 py-2 text-xs text-purple-700 font-medium">
+              🧪 DONNÉES DE DÉMONSTRATION — flotte simulée à des fins de test. Aucune donnée réelle.
+            </div>
+          </div>
+        );
+      })()}
+
+      {(() => {
         const ds = { ...(data.stats?.data_status || {}), ...(data.efficiency?.data_status || {}) };
         const issues = Object.entries(ds).filter(([, s]) => s !== "ok");
         if (!issues.length || loading) return null;

@@ -57,6 +57,10 @@ class NavixyClient:
     async def request(self, endpoint: str, params: dict = None, navixy_hash: str = None) -> dict:
         if params is None:
             params = {}
+        if (navixy_hash or self.default_hash) == "SIMULATION":
+            # Tenant DEMO uniquement — données fictives étiquetées, jamais pour un client réel
+            from demo_simulator import simulate
+            return simulate(endpoint, params)
         params['hash'] = navixy_hash or self.default_hash
 
         req_log = NavixyRequestLog(endpoint, params)

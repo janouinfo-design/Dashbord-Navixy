@@ -44,6 +44,17 @@ const MotorBadge = ({ motor, testId }) => {
 };
 
 const FuelLevel = ({ cap, testId }) => {
+  const soc = cap?.capabilities?.ev_soc;
+  if (soc?.available && typeof soc.value === "number") {
+    const low = soc.value < 20;
+    const stale = soc.status === "STALE";
+    return (
+      <span className={`tabular-nums font-medium ${low ? "text-red-600" : stale ? "text-amber-600" : "text-emerald-600"}`} data-testid={testId}
+        title={`Batterie de traction · Source: ${soc.source} · MAJ ${soc.update_time || "?"}`}>
+        ⚡ {Math.round(soc.value)} %{stale && <span className="ml-1 text-[9px] uppercase">ancien</span>}
+      </span>
+    );
+  }
   const fl = cap?.capabilities?.fuel_level;
   if (!fl?.available || fl.value === null || fl.value === undefined)
     return <span className="text-gray-300" data-testid={testId}>—</span>;
@@ -92,6 +103,25 @@ const CapabilitiesPanel = ({ cap }) => {
           <span className={`font-medium ${evDetected ? "text-emerald-600" : "text-gray-300"}`}>{evDetected ? "✓" : "Non détectée"}</span>
         </div>
       </div>
+      {evDetected && (
+        <div className="mt-3 grid grid-cols-3 gap-2" data-testid="ev-values">
+          {[["ev_soc", "Batterie traction"], ["ev_range", "Autonomie"], ["ev_charging_state", "Recharge"]].map(([k, lbl]) => {
+            const c = caps[k];
+            const CHARGE_LABELS = { charging: "En charge", plugged_not_charging: "Branché", disconnected: "Débranché" };
+            const val = !c?.available || c.value == null ? "—"
+              : k === "ev_charging_state" ? (CHARGE_LABELS[c.value] || c.value)
+              : `${Math.round(c.value)} ${c.unit || ""}`;
+            return (
+              <div key={k} className="rounded-lg bg-emerald-50/50 border border-emerald-100 px-2.5 py-2" data-testid={`ev-${k}`}>
+                <div className="text-[9px] uppercase tracking-wide text-emerald-700/70">{lbl}</div>
+                <div className="text-sm font-semibold text-emerald-800">{val}</div>
+                {c?.source?.startsWith("simulation") && <div className="text-[8px] text-purple-500 uppercase font-semibold">Simulation</div>}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
       {cap.vin?.conflict && (
         <div className="mt-3 text-[11px] text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2" data-testid="vin-conflict">
           ⚠ Conflit VIN — OBD : {cap.vin.obd} · Garage : {cap.vin.garage}. Aucune correction automatique, vérifiez la fiche.

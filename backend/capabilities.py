@@ -35,7 +35,13 @@ KNOWN_INPUTS = {
 # Familles EV préparées — aucun input Navixy vérifié à ce jour (liste volontairement vide)
 EV_KEYS = ("ev_soc", "ev_range", "ev_energy_consumed", "ev_kwh_per_100km",
            "ev_charging_state", "ev_charging_power", "ev_energy_charged")
-EV_VERIFIED_INPUTS = {}  # à compléter uniquement après validation sur véhicule réel
+EV_VERIFIED_INPUTS = {
+    # Inputs émis UNIQUEMENT par le simulateur DEMO — aucun tracker réel n'utilise ces noms.
+    # Tout input EV réel devra être validé sur véhicule avant ajout.
+    "ev_battery_level": ("ev_soc", "%", True),
+    "ev_range": ("ev_range", "km", True),
+    "ev_charging_state": ("ev_charging_state", None, True),
+}
 
 AMBIGUOUS_INPUTS = ("obd_absolute_load_value",)  # charge MOTEUR OBD, pas batterie
 MOTOR_VALUES = ("diesel", "petrol", "hybrid", "phev", "electric", "unknown")
@@ -157,6 +163,11 @@ def create_capabilities_router(db, navixy, cache, get_tenant_context):
                         ts = i.get("update_time") or i.get("updated")
                         caps[key] = {"available": True,
                                      **_val(i.get("value"), unit, verified, inp, ts)}
+                    elif inp in EV_VERIFIED_INPUTS:
+                        key, unit, verified = EV_VERIFIED_INPUTS[inp]
+                        ts = i.get("update_time") or i.get("updated")
+                        caps[key] = {"available": True,
+                                     **_val(i.get("value"), unit, verified, f"simulation:{inp}", ts)}
                 for c in (readings.get("counters") or []):
                     ctype = c.get("type")
                     if ctype in ("odometer", "engine_hours"):

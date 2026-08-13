@@ -85,19 +85,28 @@ export const EnergySection = ({ data, onOpenVehicle }) => {
   const m = useMemo(() => {
     const recs = caps?.records || {};
     const mix = { thermique: [], electrique: [], hybride: [], inconnu: [] };
-    const fuelLow = [], noEnergy = [];
+    const fuelLow = [], noEnergy = [], battLow = [];
     for (const v of vehicles) {
       const c = recs[String(v.tracker_id)];
       const plate = c?.reg_number ? `${c.reg_number} · ` : "";
       const item = { tid: v.tracker_id, label: v.label, sub: c?.reg_number || undefined };
       mix[energyOf(c?.motorisation)].push(item);
       const fl = c?.capabilities?.fuel_level;
+      const soc = c?.capabilities?.ev_soc;
+      if (soc?.available && typeof soc.value === "number") {
+        if (soc.value < threshold)
+          battLow.push({ ...item, value: `⚡ ${Math.round(soc.value)} %`, valueCls: "text-red-600",
+                         sub: `${plate}Batterie de traction · MAJ ${soc.update_time}` });
+      }
       if (fl?.available && typeof fl.value === "number") {
         if (fl.value < threshold)
           fuelLow.push({ ...item, value: `${Math.round(fl.value)} %`, valueCls: "text-red-600",
                          sub: `${plate}${fl.status === "STALE" ? `Donnée ancienne (${fl.update_time})` : `MAJ ${fl.update_time}`}` });
       } else {
         noEnergy.push({ ...item, sub: `${plate}Aucune donnée énergie exploitable (capteur absent)` });
+      }
+      if ((soc?.available && typeof soc.value === "number") && noEnergy.length && noEnergy[noEnergy.length - 1].tid === v.tracker_id) {
+        noEnergy.pop(); // un EV avec SoC a bien une donnée énergie
       }
     }
     const offline = vehicles.filter(v => v.connection_status !== "active")
@@ -121,7 +130,7 @@ export const EnergySection = ({ data, onOpenVehicle }) => {
       push("Prochaine expertise", rec.general?.prochaine_expertise);
     }
     deadlines.sort((a, b) => a._d - b._d);
-    return { mix, fuelLow, noEnergy, offline, sousUtilises: byCat("sous_utilise"), fortement: byCat("tres_utilise"), deadlines };
+    return { mix, fuelLow, noEnergy, battLow, offline, sousUtilises: byCat("sous_utilise"), fortement: byCat("tres_utilise"), deadlines };
   }, [caps, vehicles, adminRecs, data.efficiency, threshold]);
 
   if (!vehicles.length) return null;
@@ -161,6 +170,12 @@ export const EnergySection = ({ data, onOpenVehicle }) => {
                 data-testid="alert-fuel-low">
                 <span className="flex items-center gap-1.5"><Fuel size={12} />Carburant faible</span>
                 <span className="font-semibold">{m.fuelLow.length}</span>
+              </button>
+              <button onClick={() => open(`Batterie faible (< ${threshold} %)`, m.battLow)} disabled={!m.battLow.length}
+                className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs ${m.battLow.length ? "bg-red-50 text-red-700 hover:bg-red-100" : "bg-gray-50 text-gray-400"}`}
+                data-testid="alert-battery-low">
+                <span className="flex items-center gap-1.5"><Zap size={12} />Batterie faible (EV)</span>
+                <span className="font-semibold">{m.battLow.length}</span>
               </button>
               <button onClick={() => open("Sans donnée énergie exploitable", m.noEnergy)} disabled={!m.noEnergy.length}
                 className={`w-full flex items-center justify-between px-3 py-2 rounded-lg text-xs ${m.noEnergy.length ? "bg-gray-50 text-gray-600 hover:bg-gray-100" : "bg-gray-50 text-gray-400"}`}
