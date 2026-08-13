@@ -287,6 +287,13 @@ Vue generale | Analyse flotte | Conducteurs | Vehicules | Couts | IoT | (Audit v
   - Backend INCHANGE (comparaison periode precedente = mecanisme frontend existant via 2e appel /fleet/efficiency)
   - Tests: iteration_24 (4 tenants, responsive 1920/1366/1024, 48/48 pytest suites reference) + iteration_25 (coherence Vue generale<->Analyse flotte VERIFIEE: FlexMobil 17/2/23/10=52 identiques dans les 2 onglets, filtre normale=23 rows, telemetrie demo 5/5). Captures desktop/laptop/tablette prises sur FlexMobil reel
   - Suites pytest test_analyse_flotte_invariants/test_drivers_ecodriving/test_vehicle_admin/test_groups en echec PREEXISTANT (401 infra test, sans rapport V2)
+- [x] **Harmonisation icones (demande user post-V2)** (2026-06, verifie par captures FlexMobil+DEMO EV+Analyse flotte):
+  - Bibliotheque UNIQUE: lucide-react (outline, deja utilisee) — AUCUN emoji restant dans le dashboard (grep verifie)
+  - Semantique fixe: Car=vehicule (KPI actifs, onglet Vehicules, placeholders, recos) · WifiOff=hors ligne · CalendarX=sans activite · Gauge=utilisation · Route=distance/intensite km · AlertTriangle=critique · Fuel=thermique · Droplets=conso estimee · Plug=electrique/kWh · Battery=SoC · BatteryCharging=EV batterie faible · PlugZap=en charge · Wifi=couverture telemetrie · Wrench=maintenance/echeances · Shield=assurance · CheckCircle2=controles · FileText=leasing/document · FlaskConical=bandeau demo
+  - IconBadge (pastille circulaire coloree): vert=positif, bleu=info, orange=attention, rouge=critique, gris=neutre — appliquee sur KPI L1, tuiles energie/maintenance, header des drawers (prop icon/tone), eco-line
+  - Priorites du jour: icone semantique par ligne (remplace le point) ; deadline rows avec icone par type ; emojis retires de VehiclesTab (colonne energie: Battery + PlugZap 'En charge' / Plug 'Branche') et DashboardLayout (bandeaux demo/partiel)
+  - AnalyseFlotteTab: pastille Car verte (flotte active), pastille Route bleue (intensite km) — memes icones = meme information partout
+  - PIEGE RECURRENT (4e occurrence): search_replace multi-lignes sur VehiclesTab.jsx a CORROMPU la fin du fichier sans appliquer le changement (succes fantome) — repare via script python atomique. TOUJOURS re-grep + verifier compilation apres edits multi-lignes sur ce fichier
 - [ ] PROCHAIN CHANTIER VALIDE PAR USER: module Conducteurs & Eco-conduite (prioritaire sur historique carburant)
 - [ ] Phase 3 (a valider): exploitation fuel_level dans Analyse/couts, historique sensor graphiques, EV quand vehicule reel compatible
 - [ ] Integration Baubit (P2)

@@ -1,9 +1,9 @@
 import React, { useState, useEffect, useMemo, useCallback } from "react";
 import { API, api } from "@/lib/api";
 import {
-  Truck, Search, ChevronRight, X, Pencil, Check, Plus, Trash2,
+  Search, ChevronRight, X, Pencil, Check, Plus, Trash2,
   FileText, Download, Upload, Hash, Gauge, Radio, ShieldCheck,
-  CreditCard, ClipboardList, FolderOpen, Car, Loader2, Camera, RefreshCw, PlugZap
+  CreditCard, ClipboardList, FolderOpen, Car, Loader2, Camera, RefreshCw, PlugZap, Plug, Battery
 } from "lucide-react";
 
 // ─── Échéances : rouge = échu, orange < 30 j, vert sinon ───
@@ -52,19 +52,19 @@ const FuelLevel = ({ cap, testId }) => {
     const charging = cap?.capabilities?.ev_charging_state?.value;
     return (
       <div data-testid={testId}>
-        <span className={`tabular-nums font-medium ${low ? "text-red-600" : stale ? "text-amber-600" : "text-emerald-600"}`}
+        <span className={`inline-flex items-center gap-1 tabular-nums font-medium ${low ? "text-red-600" : stale ? "text-amber-600" : "text-emerald-600"}`}
           title={`Batterie de traction · Source: ${soc.source} · MAJ ${soc.update_time || "?"}`}>
-          ⚡ {Math.round(soc.value)} %
+          <Battery size={12} strokeWidth={2} /> {Math.round(soc.value)} %
           {range?.available && range.value != null && (
             <span className="text-gray-500 font-normal"> · {Math.round(range.value)} km</span>
           )}
           {stale && <span className="ml-1 text-[9px] uppercase">ancien</span>}
         </span>
         {charging === "charging" && (
-          <div className="text-[10px] text-emerald-600 font-semibold animate-pulse" data-testid={`${testId}-charging`}>🔌 En charge</div>
+          <div className="flex items-center gap-1 text-[10px] text-emerald-600 font-semibold animate-pulse" data-testid={`${testId}-charging`}><PlugZap size={11} strokeWidth={2} />En charge</div>
         )}
         {charging === "plugged_not_charging" && (
-          <div className="text-[10px] text-gray-500" data-testid={`${testId}-charging`}>🔌 Branché</div>
+          <div className="flex items-center gap-1 text-[10px] text-gray-500" data-testid={`${testId}-charging`}><Plug size={11} strokeWidth={2} />Branché</div>
         )}
       </div>
     );
@@ -141,7 +141,7 @@ const CapabilitiesPanel = ({ cap }) => {
 
       {cap.vin?.conflict && (
         <div className="mt-3 text-[11px] text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2" data-testid="vin-conflict">
-          ⚠ Conflit VIN — OBD : {cap.vin.obd} · Garage : {cap.vin.garage}. Aucune correction automatique, vérifiez la fiche.
+          Conflit VIN — OBD : {cap.vin.obd} · Garage : {cap.vin.garage}. Aucune correction automatique, vérifiez la fiche.
         </div>
       )}
       {cap.dtc?.codes?.length > 0 && (
@@ -453,7 +453,7 @@ const VehicleSheet = ({ vehicle, record, garageVehicle, unlinkedGarage, groupNam
               {gv?.avatar_url ? (
                 <img src={gv.avatar_url} alt={vehicle.label} className="w-24 h-16 object-cover rounded-lg border border-gray-200" data-testid="sheet-photo" />
               ) : (
-                <div className="w-24 h-16 rounded-lg bg-gray-50 border border-gray-200 flex items-center justify-center"><Truck size={22} className="text-gray-300" /></div>
+                <div className="w-24 h-16 rounded-lg bg-gray-50 border border-gray-200 flex items-center justify-center"><Car size={22} className="text-gray-300" /></div>
               )}
               {gv && (
                 <label className="absolute inset-0 flex items-center justify-center bg-black/40 opacity-0 group-hover:opacity-100 rounded-lg cursor-pointer transition-opacity" title="Changer la photo (synchronisée garage)">
@@ -754,7 +754,7 @@ export const VehiclesTab = ({ data, initialSelected, onConsumedInitial }) => {
                       {gv?.avatar_url ? (
                         <img src={gv.avatar_url} alt={v.label} className="w-14 h-10 object-cover rounded-lg border border-gray-200 shrink-0" data-testid={`vehicle-photo-${v.tracker_id}`} />
                       ) : (
-                        <div className="w-14 h-10 rounded-lg bg-gray-50 border border-gray-200 flex items-center justify-center shrink-0"><Truck size={15} className="text-gray-400" /></div>
+                        <div className="w-14 h-10 rounded-lg bg-gray-50 border border-gray-200 flex items-center justify-center shrink-0"><Car size={15} className="text-gray-400" /></div>
                       )}
                       <div>
                         <div className="font-medium text-gray-900 flex items-center gap-2">{v.label}

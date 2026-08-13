@@ -2,8 +2,8 @@ import React, { useState, useMemo, useRef, useEffect } from "react";
 import { API, api } from "@/lib/api";
 import { DashboardDetailDrawer } from "@/components/shared/DashboardDetailDrawer";
 import {
-  Truck, Search, ChevronDown, ChevronUp, AlertTriangle, Info, X,
-  Clock, Gauge, Fuel, Scale, Leaf
+  Car, Search, ChevronDown, ChevronUp, AlertTriangle, Info, X,
+  Clock, Route, Fuel, Scale, Leaf
 } from "lucide-react";
 import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip,
@@ -255,7 +255,7 @@ export const AnalyseFlotteTab = ({ data, fromDate, toDate }) => {
       });
     if (analytics.inactive > 0)
       list.push({
-        icon: Truck, tag: 'Reduction',
+        icon: Car, tag: 'Reduction',
         text: `${analytics.inactive} vehicule${analytics.inactive > 1 ? 's' : ''} sans activite sur ${period.days || '—'} jours — evaluer restitution ou reaffectation`,
         action: () => setCategory('inactif'),
       });
@@ -332,7 +332,10 @@ export const AnalyseFlotteTab = ({ data, fromDate, toDate }) => {
         {/* Flotte active vs dormante */}
         <button onClick={() => setCategory('used')} data-testid="kpi-used"
           className={`bg-white rounded-xl border p-3.5 text-left transition-all hover:shadow-sm ${isActive('used') ? 'ring-2 ring-[#111]' : 'border-gray-200'}`}>
-          <div className="text-[10px] font-medium text-gray-400 uppercase tracking-wider mb-1">Flotte active vs dormante</div>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="w-6 h-6 rounded-full bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0"><Car size={12} strokeWidth={2} /></span>
+            <span className="text-[10px] font-medium text-gray-400 uppercase tracking-wider">Flotte active vs dormante</span>
+          </div>
           <div className="text-xl font-semibold" style={{ fontFamily: 'Outfit, sans-serif' }}>{usedPct}%</div>
           <div className="text-[10px] text-gray-400">{analytics.used} / {analytics.totalV} vehicules</div>
           {analytics.inactive > 0 && (
@@ -364,8 +367,8 @@ export const AnalyseFlotteTab = ({ data, fromDate, toDate }) => {
 
         {/* Intensité kilométrique */}
         <div className="bg-white rounded-xl border border-gray-200 p-3.5" data-testid="kpi-intensity">
-          <div className="flex items-center gap-1 mb-1">
-            <Gauge size={11} className="text-gray-400" />
+          <div className="flex items-center gap-1.5 mb-1">
+            <span className="w-6 h-6 rounded-full bg-blue-50 text-blue-600 flex items-center justify-center shrink-0"><Route size={12} strokeWidth={2} /></span>
             <Tip label="Intensite kilometrique" def={`Distance totale (${Math.round(analytics.totalKm)} km) divisee par le nombre de vehicules actifs (${analytics.used}). Exclut les vehicules sans activite.`}>
               <span className="text-[10px] font-medium text-gray-500 uppercase tracking-wider">Intensite km moy.</span>
             </Tip>

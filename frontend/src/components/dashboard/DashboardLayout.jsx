@@ -4,8 +4,8 @@ import { useAuth } from "@/lib/AuthContext";
 import { Header } from "@/components/layout/Header";
 import { PeriodSelector } from "@/components/shared/PeriodSelector";
 import {
-  BarChart3, Gauge, Users, Truck, Activity,
-  ShieldCheck, Code, FileText
+  BarChart3, Gauge, Users, Car, Activity,
+  ShieldCheck, Code, FileText, FlaskConical, AlertTriangle
 } from "lucide-react";
 
 import { OverviewTab } from "@/components/dashboard/tabs/OverviewTab";
@@ -21,7 +21,7 @@ const TABS = [
   { id: "overview", label: "Vue generale", icon: BarChart3 },
   { id: "analyse", label: "Analyse flotte", icon: Gauge },
   { id: "drivers", label: "Conducteurs", icon: Users },
-  { id: "vehicles", label: "Vehicules", icon: Truck },
+  { id: "vehicles", label: "Vehicules", icon: Car },
 ];
 const ADMIN_TAB = { id: "audit", label: "Audit", icon: ShieldCheck };
 
@@ -147,8 +147,8 @@ export const DashboardLayout = () => {
         if (!vs.length || !vs.every(v => v.model === "simulator")) return null;
         return (
           <div className="bg-purple-50 border-b border-purple-200" data-testid="demo-banner">
-            <div className="max-w-[1600px] mx-auto px-4 lg:px-8 py-2 text-xs text-purple-700 font-medium">
-              🧪 DONNÉES DE DÉMONSTRATION — flotte simulée à des fins de test. Aucune donnée réelle.
+            <div className="max-w-[1600px] mx-auto px-4 lg:px-8 py-2 text-xs text-purple-700 font-medium flex items-center gap-1.5">
+              <FlaskConical size={13} className="shrink-0" /> DONNÉES DE DÉMONSTRATION — flotte simulée à des fins de test. Aucune donnée réelle.
             </div>
           </div>
         );
@@ -160,9 +160,9 @@ export const DashboardLayout = () => {
         if (!issues.length || loading) return null;
         return (
           <div className="bg-amber-50 border-b border-amber-200" data-testid="partial-data-banner">
-            <div className="max-w-[1600px] mx-auto px-4 lg:px-8 py-2 text-xs text-amber-800">
-              ⚠ Données partielles — sources en {issues.some(([, s]) => s === "error") ? "erreur" : "réponse incomplète"} :{" "}
-              {issues.map(([k, s]) => `${k} (${s === "error" ? "échec" : "partiel"})`).join(", ")}. Les totaux affichés peuvent être incomplets.
+            <div className="max-w-[1600px] mx-auto px-4 lg:px-8 py-2 text-xs text-amber-800 flex items-center gap-1.5">
+              <AlertTriangle size={13} className="shrink-0" /> <span>Données partielles — sources en {issues.some(([, s]) => s === "error") ? "erreur" : "réponse incomplète"} :{" "}
+              {issues.map(([k, s]) => `${k} (${s === "error" ? "échec" : "partiel"})`).join(", ")}. Les totaux affichés peuvent être incomplets.</span>
             </div>
           </div>
         );
