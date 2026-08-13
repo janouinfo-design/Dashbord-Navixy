@@ -3,7 +3,7 @@ import { API, api } from "@/lib/api";
 import {
   AlertTriangle, WifiOff, Wifi, ChevronRight, X, Fuel, Leaf, HelpCircle,
   Car, CalendarX, Route, Gauge, Shield, CheckCircle2, Wrench,
-  Droplets, Plug, Battery, BatteryCharging, FileText, Phone, Shuffle, CalendarClock
+  Droplet, Plug, BatteryFull, BatteryCharging, FileText, Phone, Shuffle, CalendarClock
 } from "lucide-react";
 import {
   ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -152,8 +152,8 @@ const Panel = ({ title, children, action, testId, className = "" }) => (
   </div>
 );
 
-// Carte KPI énergie (style maquette : pastille + label, grosse valeur, sous-texte)
-const EnergyCard = ({ icon, tone, label, unit, value, sub, onClick, testId, valueCls = "text-gray-900" }) => {
+// Carte KPI énergie (style maquette : icône nue à droite — sauf badge carré rouge pour EV faible)
+const EnergyCard = ({ icon: Icon, iconCls = "text-gray-400", iconWrap, label, unit, value, sub, onClick, testId, valueCls = "text-gray-900" }) => {
   const Tag = onClick ? "button" : "div";
   return (
     <Tag onClick={onClick} className={`rounded-lg border border-gray-100 p-3 text-left ${onClick ? "hover:bg-gray-50 cursor-pointer transition-colors" : ""}`} data-testid={testId}>
@@ -162,7 +162,9 @@ const EnergyCard = ({ icon, tone, label, unit, value, sub, onClick, testId, valu
           <div className="text-[10px] font-semibold text-gray-600">{label}</div>
           {unit && <div className="text-[9px] text-gray-400">{unit}</div>}
         </div>
-        <IconBadge icon={icon} tone={tone} size={13} />
+        {iconWrap === "red-square"
+          ? <span className="w-8 h-8 rounded-lg bg-red-50 text-red-500 flex items-center justify-center shrink-0"><Icon size={16} strokeWidth={2} /></span>
+          : <Icon size={18} strokeWidth={1.8} className={`${iconCls} shrink-0`} />}
       </div>
       <div className={`text-xl font-semibold mt-1 ${valueCls}`} style={{ fontFamily: "Outfit, sans-serif" }}>{value}</div>
       {sub && <div className="text-[9px] text-gray-400 mt-0.5">{sub}</div>}
@@ -651,28 +653,28 @@ export const OverviewTab = ({ data, fromDate, toDate, onNavigate, onOpenVehicle 
 
                 {/* Cartes KPI énergie (EV masqué en production sans télémétrie — 5a) */}
                 <div className="xl:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-2 content-start">
-                  <EnergyCard icon={Droplets} tone="blue" label="Conso thermique estimée" unit="(L/100 km)"
+                  <EnergyCard icon={Droplet} iconCls="text-gray-400" label="Conso thermique estimée" unit="(L/100 km)"
                     value={energy.estL100 !== null ? energy.estL100.toLocaleString("fr-FR") : "—"}
                     sub={energy.fuelEstVehicles.length > 0
                       ? `Estimation : taux configuré × km · ${energy.fuelEstVehicles.length}/${m.total} véhicules · ${energy.estLiters} L sur la période`
                       : "Aucun taux de consommation configuré — aucune estimation affichée"}
                     testId="energy-estimated-consumption" />
                   {avgKwh && (
-                    <EnergyCard icon={Plug} tone="green" label="Conso électrique moyenne" unit="(kWh/100 km)"
+                    <EnergyCard icon={Plug} iconCls="text-gray-500" label="Conso électrique moyenne" unit="(kWh/100 km)"
                       value={avgKwh} sub={`${energy.kwhs.length} EV avec télémétrie`} testId="energy-ev-kwh" />
                   )}
                   {avgSoc !== null && (
-                    <EnergyCard icon={Battery} tone="green" label="SOC moyen EV" unit="(Électriques)"
+                    <EnergyCard icon={BatteryFull} iconCls="text-emerald-500" label="SOC moyen EV" unit="(Électriques)"
                       value={`${avgSoc}%`} sub={`${energy.socs.length} EV avec télémétrie batterie`} testId="energy-ev-soc" />
                   )}
                   {avgSoc !== null && (
-                    <EnergyCard icon={BatteryCharging} tone="red" label="EV batterie faible" unit={`(< ${threshold} %)`}
+                    <EnergyCard icon={BatteryCharging} iconWrap="red-square" label="EV batterie faible" unit={`(< ${threshold} %)`}
                       value={energy.battLow.length} valueCls={energy.battLow.length ? "text-red-600" : "text-gray-300"}
                       sub={`véhicule${energy.battLow.length > 1 ? "s" : ""} — donnée réelle et récente uniquement`}
                       onClick={energy.battLow.length ? () => open(`Batterie EV faible (< ${threshold} %)`, energy.battLow, BatteryCharging, "orange") : undefined}
                       testId="energy-ev-low" />
                   )}
-                  <EnergyCard icon={Wifi} tone="green" label="Couverture télémétrie énergie" unit=""
+                  <EnergyCard icon={Wifi} iconCls="text-gray-400" label="Couverture télémétrie énergie" unit=""
                     value={`${telemetryPct}%`} sub={`${energy.telemetry.length}/${m.total} véhicules avec niveau carburant ou batterie réellement mesuré`}
                     onClick={energy.telemetry.length ? () => open("Télémétrie énergie disponible", energy.telemetry, Wifi, "green") : undefined}
                     testId="energy-telemetry-coverage" />
