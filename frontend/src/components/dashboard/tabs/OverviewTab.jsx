@@ -3,12 +3,13 @@ import { API, api } from "@/lib/api";
 import {
   AlertTriangle, WifiOff, Wifi, ChevronRight, X, Fuel, Leaf, HelpCircle,
   Car, CalendarX, Route, Gauge, Shield, CheckCircle2, Wrench,
-  Droplet, Plug, BatteryFull, BatteryCharging, FileText, Phone, Shuffle, CalendarClock
+  FileText, Phone, Shuffle, CalendarClock, Plug
 } from "lucide-react";
 import {
   ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
   PieChart, Pie, Cell,
 } from "recharts";
+import { MatWaterDrop, MatPower, MatBatteryFull, MatBatteryCharging, MatWifi } from "./EnergyIcons";
 
 // ═══ Catégories d'AFFICHAGE (décision 1a) — seuils/calculs backend inchangés ═══
 const DISPLAY_CATEGORIES = [
@@ -399,7 +400,7 @@ export const OverviewTab = ({ data, fromDate, toDate, onNavigate, onOpenVehicle 
     if (energy.battLow.length) list.push({
       id: "batt-low", sev: "amber", count: energy.battLow.length,
       title: "Batteries faibles (EV)",
-      onClick: () => open(`Batterie EV faible (< ${threshold} %)`, energy.battLow, BatteryCharging, "orange"),
+      onClick: () => open(`Batterie EV faible (< ${threshold} %)`, energy.battLow, MatBatteryCharging, "orange"),
     });
     const upcomingAndWatch = [...maint.upcoming, ...maint.overdueWatch];
     if (upcomingAndWatch.length) list.push({
@@ -427,7 +428,7 @@ export const OverviewTab = ({ data, fromDate, toDate, onNavigate, onOpenVehicle 
     if (m.offline.length) list.push({ icon: Phone, t: "Contacter les conducteurs des véhicules hors ligne", f: () => open("Véhicules hors ligne", m.offline.map(m.offItem), WifiOff, "orange") });
     if (m.catCounts.sous_utilise) list.push({ icon: Shuffle, t: "Réaffecter les véhicules sous-utilisés", f: () => open("Véhicules sous-utilisés (< 30 %)", m.catItems.sous_utilise, Gauge, "orange") });
     if (maint.upcoming.length) list.push({ icon: CalendarClock, t: "Planifier les entretiens prioritaires", f: () => open("Échéances ≤ 30 jours", [...maint.upcoming, ...maint.overdueWatch], Wrench, "orange") });
-    if (energy.battLow.length) list.push({ icon: BatteryCharging, t: "Revoir les véhicules avec batterie faible", f: () => open(`Batterie EV faible (< ${threshold} %)`, energy.battLow, BatteryCharging, "orange") });
+    if (energy.battLow.length) list.push({ icon: MatBatteryCharging, t: "Revoir les véhicules avec batterie faible", f: () => open(`Batterie EV faible (< ${threshold} %)`, energy.battLow, MatBatteryCharging, "orange") });
     if (m.inactive.length && list.length < 4) list.push({ icon: Shuffle, t: `Évaluer la réaffectation des ${m.inactive.length} véhicules sans activité`, f: () => open("Sans activité sur la période", m.catItems.inactif, CalendarX, "gray") });
     if (!list.length) list.push({ icon: CheckCircle2, t: "Aucune action requise — flotte conforme aux seuils", f: null });
     return list.slice(0, 4);
@@ -653,30 +654,30 @@ export const OverviewTab = ({ data, fromDate, toDate, onNavigate, onOpenVehicle 
 
                 {/* Cartes KPI énergie (EV masqué en production sans télémétrie — 5a) */}
                 <div className="xl:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-2 content-start">
-                  <EnergyCard icon={Droplet} iconCls="text-gray-400" label="Conso thermique estimée" unit="(L/100 km)"
+                  <EnergyCard icon={MatWaterDrop} iconCls="text-gray-400" label="Conso thermique estimée" unit="(L/100 km)"
                     value={energy.estL100 !== null ? energy.estL100.toLocaleString("fr-FR") : "—"}
                     sub={energy.fuelEstVehicles.length > 0
                       ? `Estimation : taux configuré × km · ${energy.fuelEstVehicles.length}/${m.total} véhicules · ${energy.estLiters} L sur la période`
                       : "Aucun taux de consommation configuré — aucune estimation affichée"}
                     testId="energy-estimated-consumption" />
                   {avgKwh && (
-                    <EnergyCard icon={Plug} iconCls="text-gray-500" label="Conso électrique moyenne" unit="(kWh/100 km)"
+                    <EnergyCard icon={MatPower} iconCls="text-gray-500" label="Conso électrique moyenne" unit="(kWh/100 km)"
                       value={avgKwh} sub={`${energy.kwhs.length} EV avec télémétrie`} testId="energy-ev-kwh" />
                   )}
                   {avgSoc !== null && (
-                    <EnergyCard icon={BatteryFull} iconCls="text-emerald-500" label="SOC moyen EV" unit="(Électriques)"
+                    <EnergyCard icon={MatBatteryFull} iconCls="text-emerald-500" label="SOC moyen EV" unit="(Électriques)"
                       value={`${avgSoc}%`} sub={`${energy.socs.length} EV avec télémétrie batterie`} testId="energy-ev-soc" />
                   )}
                   {avgSoc !== null && (
-                    <EnergyCard icon={BatteryCharging} iconWrap="red-square" label="EV batterie faible" unit={`(< ${threshold} %)`}
+                    <EnergyCard icon={MatBatteryCharging} iconWrap="red-square" label="EV batterie faible" unit={`(< ${threshold} %)`}
                       value={energy.battLow.length} valueCls={energy.battLow.length ? "text-red-600" : "text-gray-300"}
                       sub={`véhicule${energy.battLow.length > 1 ? "s" : ""} — donnée réelle et récente uniquement`}
-                      onClick={energy.battLow.length ? () => open(`Batterie EV faible (< ${threshold} %)`, energy.battLow, BatteryCharging, "orange") : undefined}
+                      onClick={energy.battLow.length ? () => open(`Batterie EV faible (< ${threshold} %)`, energy.battLow, MatBatteryCharging, "orange") : undefined}
                       testId="energy-ev-low" />
                   )}
-                  <EnergyCard icon={Wifi} iconCls="text-gray-400" label="Couverture télémétrie énergie" unit=""
+                  <EnergyCard icon={MatWifi} iconCls="text-gray-400" label="Couverture télémétrie énergie" unit=""
                     value={`${telemetryPct}%`} sub={`${energy.telemetry.length}/${m.total} véhicules avec niveau carburant ou batterie réellement mesuré`}
-                    onClick={energy.telemetry.length ? () => open("Télémétrie énergie disponible", energy.telemetry, Wifi, "green") : undefined}
+                    onClick={energy.telemetry.length ? () => open("Télémétrie énergie disponible", energy.telemetry, MatWifi, "green") : undefined}
                     testId="energy-telemetry-coverage" />
                 </div>
               </div>
