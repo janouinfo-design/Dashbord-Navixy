@@ -3,10 +3,11 @@ import { API, api } from "@/lib/api";
 import {
   AlertTriangle, WifiOff, Wifi, ChevronRight, X, Fuel, Leaf, HelpCircle,
   Car, CalendarX, Route, Gauge, Shield, CheckCircle2, Wrench,
-  Droplets, Plug, PlugZap, Battery, BatteryCharging, FileText
+  Droplets, Plug, Battery, BatteryCharging, FileText, Phone, Shuffle, CalendarClock
 } from "lucide-react";
 import {
   ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  PieChart, Pie, Cell,
 } from "recharts";
 
 // ═══ Catégories d'AFFICHAGE (décision 1a) — seuils/calculs backend inchangés ═══
@@ -19,8 +20,6 @@ const DISPLAY_CATEGORIES = [
 const displayCat = (backendCat) => DISPLAY_CATEGORIES.find(c => c.match.includes(backendCat)) || DISPLAY_CATEGORIES[0];
 
 // ═══ Icônes — sémantique unique LOGITRAK (lucide outline, jamais d'emoji) ═══
-// voiture=véhicule · wifi barré=hors ligne · calendrier=sans activité · jauge=utilisation · route=distance
-// triangle=critique · goutte/carburant=thermique · prise=électrique · batterie=SoC EV · bouclier=assurance · coche=contrôle · clé=maintenance/échéance
 const BADGE_TONES = {
   blue: "bg-blue-50 text-blue-600",
   green: "bg-emerald-50 text-emerald-600",
@@ -35,11 +34,12 @@ const IconBadge = ({ icon: Icon, tone = "blue", size = 13, className = "" }) => 
   </span>
 );
 
+// Couleurs du donut motorisation — alignées sur la maquette (thermique bleu, hybride orange, électrique vert)
 const ENERGY_META = {
-  thermique: { label: "Thermique", icon: Fuel, tone: "gray" },
-  electrique: { label: "Électrique", icon: Plug, tone: "green" },
-  hybride: { label: "Hybride", icon: Leaf, tone: "teal" },
-  inconnu: { label: "Inconnu", icon: HelpCircle, tone: "gray" },
+  thermique: { label: "Thermique", icon: Fuel, tone: "blue", color: "#3B82F6" },
+  hybride: { label: "Hybride", icon: Leaf, tone: "orange", color: "#F59E0B" },
+  electrique: { label: "Électrique", icon: Plug, tone: "green", color: "#10B981" },
+  inconnu: { label: "Inconnu", icon: HelpCircle, tone: "gray", color: "#9CA3AF" },
 };
 const energyOf = (m) => {
   const n = m?.normalized;
@@ -93,6 +93,19 @@ const Delta = ({ curr, prev, unit = "", goodWhenUp, prevPeriod, testId, state })
   );
 };
 
+// Mini delta par DATES (échéances) — calcul déterministe sur les fiches actuelles, hausse = défavorable
+const DateDelta = ({ curr, prev, testId }) => {
+  const diff = curr - prev;
+  if (diff === 0) return <span className="text-[9px] text-gray-400" data-testid={testId}>= vs il y a 7 j</span>;
+  const bad = diff > 0;
+  return (
+    <span className={`text-[9px] font-semibold ${bad ? "text-red-500" : "text-emerald-600"}`}
+      title="Comparaison par dates d'échéance, à fiches véhicules constantes" data-testid={testId}>
+      {bad ? "▲" : "▼"} {diff > 0 ? "+" : ""}{diff} vs il y a 7 j
+    </span>
+  );
+};
+
 // ═══ Drawer liste véhicules (drill-down — clic = fiche véhicule) ═══
 const Drawer = ({ title, items, icon, tone, onClose, onOpenVehicle }) => (
   <>
@@ -138,6 +151,24 @@ const Panel = ({ title, children, action, testId, className = "" }) => (
     {children}
   </div>
 );
+
+// Carte KPI énergie (style maquette : pastille + label, grosse valeur, sous-texte)
+const EnergyCard = ({ icon, tone, label, unit, value, sub, onClick, testId, valueCls = "text-gray-900" }) => {
+  const Tag = onClick ? "button" : "div";
+  return (
+    <Tag onClick={onClick} className={`rounded-lg border border-gray-100 p-3 text-left ${onClick ? "hover:bg-gray-50 cursor-pointer transition-colors" : ""}`} data-testid={testId}>
+      <div className="flex items-start justify-between gap-2">
+        <div>
+          <div className="text-[10px] font-semibold text-gray-600">{label}</div>
+          {unit && <div className="text-[9px] text-gray-400">{unit}</div>}
+        </div>
+        <IconBadge icon={icon} tone={tone} size={13} />
+      </div>
+      <div className={`text-xl font-semibold mt-1 ${valueCls}`} style={{ fontFamily: "Outfit, sans-serif" }}>{value}</div>
+      {sub && <div className="text-[9px] text-gray-400 mt-0.5">{sub}</div>}
+    </Tag>
+  );
+};
 
 export const OverviewTab = ({ data, fromDate, toDate, onNavigate, onOpenVehicle }) => {
   const { stats, efficiency } = data;
@@ -322,7 +353,13 @@ export const OverviewTab = ({ data, fromDate, toDate, onNavigate, onOpenVehicle 
     const overdueWatch = overdue.filter(x => !x.criticalWhenOverdue);
     const assurances = all.filter(x => x.kind === "assurance");
     const controles = all.filter(x => x.kind === "controle");
-    return { all, overdue, upcoming, overdueCritical, overdueWatch, assurances, controles };
+    // Comparaison par DATES à fiches constantes : état qu'auraient eu ces compteurs il y a 7 jours
+    const prev = {
+      upcoming: all.filter(x => x.d >= -7 && x.d <= 23).length,
+      overdue: all.filter(x => x.d < -7).length,
+      controles: all.filter(x => x.kind === "controle" && x.d >= -7 && x.d <= 23).length,
+    };
+    return { all, overdue, upcoming, overdueCritical, overdueWatch, assurances, controles, prev };
   }, [adminRecs, vehicles, capsRecs]);
 
   // ═══ Alertes critiques (règle 2b) — assurance/contrôle échu + hors ligne prolongé/jamais connecté ═══
@@ -338,78 +375,79 @@ export const OverviewTab = ({ data, fromDate, toDate, onNavigate, onOpenVehicle 
   const priorities = useMemo(() => {
     const list = [];
     if (maint.overdueCritical.length) list.push({
-      id: "overdue", sev: "red", count: maint.overdueCritical.length, icon: AlertTriangle,
+      id: "overdue", sev: "red", count: maint.overdueCritical.length,
       title: `Assurance / contrôle échu${maint.overdueCritical.length > 1 ? "s" : ""}`,
       onClick: () => open("Assurances & contrôles échus", maint.overdueCritical, AlertTriangle, "red"),
     });
     if (m.offlineProlonged.length) list.push({
-      id: "offline-long", sev: "red", count: m.offlineProlonged.length, icon: WifiOff,
-      title: `Hors ligne depuis plus de ${OFFLINE_PROLONGED_HOURS} h`,
+      id: "offline-long", sev: "red", count: m.offlineProlonged.length,
+      title: `Trackers hors ligne > ${OFFLINE_PROLONGED_HOURS} h`,
       onClick: () => open(`Hors ligne prolongé (> ${OFFLINE_PROLONGED_HOURS} h)`, m.offlineProlonged.map(v => ({ ...m.offItem(v), value: v.last_update ? `> ${OFFLINE_PROLONGED_HOURS} h` : "jamais connecté", valueCls: "text-red-600" })), WifiOff, "red"),
     });
     if (m.offlineRecent.length) list.push({
-      id: "offline-recent", sev: "amber", count: m.offlineRecent.length, icon: WifiOff,
-      title: "Hors ligne récent",
+      id: "offline-recent", sev: "amber", count: m.offlineRecent.length,
+      title: "Trackers hors ligne (récent)",
       onClick: () => open("Hors ligne récent (< 48 h)", m.offlineRecent.map(m.offItem), WifiOff, "orange"),
     });
     if (energy.fuelLow.length) list.push({
-      id: "fuel-low", sev: "amber", count: energy.fuelLow.length, icon: Fuel,
+      id: "fuel-low", sev: "amber", count: energy.fuelLow.length,
       title: `Carburant faible (< ${threshold} %)`,
       onClick: () => open(`Carburant faible (< ${threshold} %)`, energy.fuelLow, Fuel, "orange"),
     });
     if (energy.battLow.length) list.push({
-      id: "batt-low", sev: "amber", count: energy.battLow.length, icon: BatteryCharging,
-      title: `Batterie EV faible (< ${threshold} %)`,
+      id: "batt-low", sev: "amber", count: energy.battLow.length,
+      title: "Batteries faibles (EV)",
       onClick: () => open(`Batterie EV faible (< ${threshold} %)`, energy.battLow, BatteryCharging, "orange"),
     });
     const upcomingAndWatch = [...maint.upcoming, ...maint.overdueWatch];
     if (upcomingAndWatch.length) list.push({
-      id: "deadlines", sev: "amber", count: upcomingAndWatch.length, icon: Wrench,
-      title: "Échéances ≤ 30 j (leasing · assurance · contrôles)",
+      id: "deadlines", sev: "amber", count: upcomingAndWatch.length,
+      title: "Entretiens à planifier < 30 jours",
       onClick: () => open("Échéances ≤ 30 jours", upcomingAndWatch, Wrench, "orange"),
     });
     if (m.catCounts.sous_utilise) list.push({
-      id: "underused", sev: "amber", count: m.catCounts.sous_utilise, icon: Gauge,
-      title: "Sous-utilisés (< 30 %)",
+      id: "underused", sev: "amber", count: m.catCounts.sous_utilise,
+      title: "Véhicules sous-utilisés",
       onClick: () => open("Véhicules sous-utilisés (< 30 %)", m.catItems.sous_utilise, Gauge, "orange"),
     });
     if (m.catCounts.tres_utilise) list.push({
-      id: "highuse", sev: "amber", count: m.catCounts.tres_utilise, icon: Gauge,
+      id: "highuse", sev: "amber", count: m.catCounts.tres_utilise,
       title: "Forte utilisation (≥ 85 %)",
       onClick: () => open("Forte utilisation (≥ 85 %)", m.catItems.tres_utilise, Gauge, "blue"),
     });
     return [...list.filter(x => x.sev === "red"), ...list.filter(x => x.sev === "amber")].slice(0, 7);
   }, [maint, m, energy, threshold]);
 
-  // Actions recommandées déterministes (complément des priorités — max 3)
+  // Actions recommandées déterministes (style maquette — icône + verbe, max 4, dérivées des priorités réelles)
   const actions = useMemo(() => {
     const list = [];
-    if (maint.overdueCritical.length) list.push({ t: "Régulariser immédiatement les documents échus", f: () => open("Assurances & contrôles échus", maint.overdueCritical, AlertTriangle, "red") });
-    if (m.offlineProlonged.length) list.push({ t: `Vérifier alimentation et connectivité des ${m.offlineProlonged.length} trackers hors ligne prolongé`, f: () => open(`Hors ligne prolongé (> ${OFFLINE_PROLONGED_HOURS} h)`, m.offlineProlonged.map(m.offItem), WifiOff, "red") });
-    if (m.catCounts.tres_utilise > 0 && m.catCounts.sous_utilise > 0) list.push({ t: "Rééquilibrer la charge entre véhicules en forte utilisation et sous-utilisés", f: () => onNavigate?.("analyse") });
-    if (m.inactive.length) list.push({ t: `Évaluer la réaffectation des ${m.inactive.length} véhicules sans activité`, f: () => open("Sans activité sur la période", m.catItems.inactif, CalendarX, "gray") });
-    if (!list.length) list.push({ t: "Aucune action requise — flotte conforme aux seuils", f: null });
-    return list.slice(0, 3);
-  }, [maint, m, onNavigate]);
+    if (maint.overdueCritical.length) list.push({ icon: AlertTriangle, t: "Régulariser les assurances et contrôles échus", f: () => open("Assurances & contrôles échus", maint.overdueCritical, AlertTriangle, "red") });
+    if (m.offline.length) list.push({ icon: Phone, t: "Contacter les conducteurs des véhicules hors ligne", f: () => open("Véhicules hors ligne", m.offline.map(m.offItem), WifiOff, "orange") });
+    if (m.catCounts.sous_utilise) list.push({ icon: Shuffle, t: "Réaffecter les véhicules sous-utilisés", f: () => open("Véhicules sous-utilisés (< 30 %)", m.catItems.sous_utilise, Gauge, "orange") });
+    if (maint.upcoming.length) list.push({ icon: CalendarClock, t: "Planifier les entretiens prioritaires", f: () => open("Échéances ≤ 30 jours", [...maint.upcoming, ...maint.overdueWatch], Wrench, "orange") });
+    if (energy.battLow.length) list.push({ icon: BatteryCharging, t: "Revoir les véhicules avec batterie faible", f: () => open(`Batterie EV faible (< ${threshold} %)`, energy.battLow, BatteryCharging, "orange") });
+    if (m.inactive.length && list.length < 4) list.push({ icon: Shuffle, t: `Évaluer la réaffectation des ${m.inactive.length} véhicules sans activité`, f: () => open("Sans activité sur la période", m.catItems.inactif, CalendarX, "gray") });
+    if (!list.length) list.push({ icon: CheckCircle2, t: "Aucune action requise — flotte conforme aux seuils", f: null });
+    return list.slice(0, 4);
+  }, [maint, m, energy, threshold]);
 
-  // ═══ Véhicules à surveiller (5 max — 1 véhicule = son alerte principale) ═══
-  const watchList = useMemo(() => {
+  // ═══ Véhicules à surveiller (1 véhicule = son alerte principale) — 5 affichés, liste complète via « Voir tout » ═══
+  const watch = useMemo(() => {
     const byTid = {};
-    const add = (tid, label, prio, alert, alertCls) => {
-      if (!byTid[tid] || byTid[tid].prio < prio) byTid[tid] = { tid, label, prio, alert, alertCls };
+    const add = (tid, label, prio, alert, alertCls, dot) => {
+      if (!byTid[tid] || byTid[tid].prio < prio) byTid[tid] = { tid, label, prio, alert, alertCls, dot };
     };
-    maint.overdueCritical.forEach(x => add(x.tid, x.label, 100, `${x.what} — ${x.value}`, "text-red-600"));
-    m.offlineProlonged.forEach(v => add(v.tracker_id, v.label, 90, v.last_update ? `Hors ligne > ${OFFLINE_PROLONGED_HOURS} h` : "Jamais connecté", "text-red-600"));
-    m.offlineRecent.forEach(v => add(v.tracker_id, v.label, 70, "Hors ligne récent", "text-amber-600"));
-    energy.fuelLow.forEach(x => add(x.tid, x.label, 60, `Carburant ${x.value}`, "text-amber-600"));
-    energy.battLow.forEach(x => add(x.tid, x.label, 60, x.value.replace("batt.", "Batterie"), "text-amber-600"));
-    maint.overdueWatch.forEach(x => add(x.tid, x.label, 55, `${x.what} — ${x.value}`, "text-amber-600"));
-    (effVehicles || []).filter(v => v.category === "sous_utilise").forEach(v => add(v.tracker_id, v.label, 40, `Sous-utilisé (${v.utilization_pct} %)`, "text-amber-600"));
-    (effVehicles || []).filter(v => v.category === "tres_utilise").forEach(v => add(v.tracker_id, v.label, 30, `Forte utilisation (${v.utilization_pct} %)`, "text-blue-600"));
-    const statusByTid = Object.fromEntries(vehicles.map(v => [v.tracker_id, v.connection_status === "active"]));
-    return Object.values(byTid).sort((a, b) => b.prio - a.prio).slice(0, 5)
-      .map(x => ({ ...x, online: statusByTid[x.tid] }));
-  }, [maint, m, energy, effVehicles, vehicles]);
+    maint.overdueCritical.forEach(x => add(x.tid, x.label, 100, `${x.what} — ${x.value}`, "text-red-600", "bg-red-500"));
+    m.offlineProlonged.forEach(v => add(v.tracker_id, v.label, 90, v.last_update ? `Hors ligne > ${OFFLINE_PROLONGED_HOURS} h` : "Jamais connecté", "text-red-600", "bg-red-500"));
+    m.offlineRecent.forEach(v => add(v.tracker_id, v.label, 70, "Tracker hors ligne", "text-amber-600", "bg-amber-500"));
+    energy.fuelLow.forEach(x => add(x.tid, x.label, 60, `Carburant ${x.value}`, "text-amber-600", "bg-amber-500"));
+    energy.battLow.forEach(x => add(x.tid, x.label, 60, x.value.replace("batt.", "Batterie faible"), "text-amber-600", "bg-amber-500"));
+    maint.overdueWatch.forEach(x => add(x.tid, x.label, 55, `${x.what} — ${x.value}`, "text-amber-600", "bg-amber-500"));
+    (effVehicles || []).filter(v => v.category === "sous_utilise").forEach(v => add(v.tracker_id, v.label, 40, `Sous-utilisé (${v.utilization_pct} %)`, "text-amber-600", "bg-amber-500"));
+    (effVehicles || []).filter(v => v.category === "tres_utilise").forEach(v => add(v.tracker_id, v.label, 30, `Forte utilisation (${v.utilization_pct} %)`, "text-blue-600", "bg-blue-500"));
+    const full = Object.values(byTid).sort((a, b) => b.prio - a.prio);
+    return { top: full.slice(0, 5), full };
+  }, [maint, m, energy, effVehicles]);
 
   // Éco-conduite compacte
   const ecoLine = useMemo(() => {
@@ -426,8 +464,11 @@ export const OverviewTab = ({ data, fromDate, toDate, onNavigate, onOpenVehicle 
   const totalEnergy = Object.values(energy.mix).reduce((s, a) => s + a.length, 0);
   const avgSoc = energy.socs.length ? Math.round(energy.socs.reduce((s, x) => s + x, 0) / energy.socs.length) : null;
   const avgKwh = energy.kwhs.length ? (energy.kwhs.reduce((s, x) => s + x, 0) / energy.kwhs.length).toFixed(1) : null;
+  const telemetryPct = m.total > 0 ? Math.round((energy.telemetry.length / m.total) * 100) : 0;
+  const donutData = Object.entries(ENERGY_META).map(([k, meta]) => ({ key: k, name: meta.label, value: energy.mix[k].length, color: meta.color })).filter(d => d.value > 0);
 
   const usedItems = m.used.map(v => ({ tid: v.tracker_id, label: v.label, value: `${v.utilization_pct} %`, sub: `${plateOf(v.tracker_id) ? plateOf(v.tracker_id) + " · " : ""}${v.active_days}/${v.total_days} jours actifs · ${v.period_mileage} km` }));
+  const watchItems = (list) => list.map(x => ({ tid: x.tid, label: x.label, sub: `${plateOf(x.tid) ? plateOf(x.tid) + " · " : ""}${x.alert}` }));
 
   return (
     <div className="p-4 lg:p-8 space-y-5 max-w-[1600px] mx-auto" data-testid="overview-tab">
@@ -569,66 +610,81 @@ export const OverviewTab = ({ data, fromDate, toDate, onNavigate, onOpenVehicle 
         <Panel title="Énergie & consommation" testId="panel-energy" className="lg:col-span-8">
           {!caps ? <div className="text-xs text-gray-400 py-6">Chargement des capacités…</div> :
            caps.success === false ? <div className="text-xs text-gray-400 py-6">Capacités indisponibles pour le moment.</div> : (
-            <div className="space-y-4">
-              {/* Répartition motorisation */}
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {Object.entries(ENERGY_META).map(([k, meta]) => {
-                  const n = energy.mix[k].length;
-                  const pct = totalEnergy > 0 ? Math.round((n / totalEnergy) * 100) : 0;
-                  return (
-                    <button key={k} onClick={() => n && open(`Énergie : ${meta.label}`, energy.mix[k], meta.icon, meta.tone)} disabled={!n}
-                      className={`rounded-lg border border-gray-100 bg-gray-50/60 p-3 text-left transition-colors ${n ? "hover:bg-gray-100 cursor-pointer" : "opacity-50 cursor-default"}`}
-                      data-testid={`energy-mix-${k}`}>
-                      <IconBadge icon={meta.icon} tone={meta.tone} size={12} className="w-6 h-6" />
-                      <div className="text-lg font-semibold mt-1.5" style={{ fontFamily: "Outfit, sans-serif" }}>{n} <span className="text-[10px] font-normal text-gray-400">({pct}%)</span></div>
-                      <div className="text-[10px] text-gray-500">{meta.label}</div>
-                    </button>
-                  );
-                })}
-              </div>
-
-              {/* Consommation estimée (3a) + couverture télémétrie */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div className="rounded-lg border border-gray-100 p-3" data-testid="energy-estimated-consumption">
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <IconBadge icon={Droplets} tone="blue" size={12} className="w-6 h-6" />
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Consommation estimée</span>
+            <div className="space-y-3">
+              <div className="grid grid-cols-1 xl:grid-cols-12 gap-4">
+                {/* Répartition par motorisation — donut */}
+                <div className="xl:col-span-5 rounded-lg border border-gray-100 p-3" data-testid="energy-donut">
+                  <div className="text-[10px] font-semibold text-gray-600 mb-1">Répartition par motorisation</div>
+                  <div className="flex items-center gap-3">
+                    <div className="relative shrink-0">
+                      <PieChart width={150} height={150}>
+                        <Pie data={donutData.length ? donutData : [{ name: "Aucune donnée", value: 1, color: "#f3f4f6" }]}
+                          dataKey="value" innerRadius={48} outerRadius={68} paddingAngle={2} startAngle={90} endAngle={-270}>
+                          {(donutData.length ? donutData : [{ color: "#f3f4f6" }]).map((d, i) => <Cell key={i} fill={d.color} stroke="none" cursor={d.key ? "pointer" : "default"}
+                            onClick={() => d.key && open(`Énergie : ${d.name}`, energy.mix[d.key], ENERGY_META[d.key].icon, ENERGY_META[d.key].tone)} />)}
+                        </Pie>
+                        <Tooltip contentStyle={{ borderRadius: 8, border: "1px solid #e5e7eb", fontSize: 11 }} />
+                      </PieChart>
+                      <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
+                        <span className="text-xl font-semibold" style={{ fontFamily: "Outfit, sans-serif" }}>{totalEnergy}</span>
+                        <span className="text-[9px] text-gray-400">véhicules</span>
+                      </div>
+                    </div>
+                    <div className="space-y-1.5 min-w-0">
+                      {Object.entries(ENERGY_META).map(([k, meta]) => {
+                        const n = energy.mix[k].length;
+                        if (n === 0) return null;
+                        const pct = totalEnergy > 0 ? Math.round((n / totalEnergy) * 1000) / 10 : 0;
+                        return (
+                          <button key={k} onClick={() => open(`Énergie : ${meta.label}`, energy.mix[k], meta.icon, meta.tone)}
+                            className="flex items-center gap-2 text-[11px] hover:bg-gray-50 rounded-md px-1.5 py-0.5 transition-colors w-full text-left"
+                            data-testid={`energy-mix-${k}`}>
+                            <span className="w-2.5 h-2.5 rounded-sm shrink-0" style={{ background: meta.color }} />
+                            <span className="text-gray-600">{meta.label}</span>
+                            <span className="font-semibold tabular-nums ml-auto" style={{ fontFamily: "Outfit, sans-serif" }}>{n} <span className="font-normal text-gray-400">({pct}%)</span></span>
+                          </button>
+                        );
+                      })}
+                    </div>
                   </div>
-                  {energy.fuelEstVehicles.length > 0 ? (
-                    <>
-                      <div className="text-lg font-semibold" style={{ fontFamily: "Outfit, sans-serif" }}>{energy.estLiters} L{energy.estL100 !== null && <span className="text-xs font-normal text-gray-500"> · ≈ {energy.estL100} L/100 km</span>}</div>
-                      <div className="text-[9px] text-gray-400 mt-1">Estimation : taux configuré × km réels — basé sur {energy.fuelEstVehicles.length}/{m.total} véhicules (EV exclus). Aucune mesure embarquée utilisée.</div>
-                    </>
-                  ) : (
-                    <div className="text-[10px] text-gray-400">Aucun taux de consommation configuré — aucune estimation affichée.</div>
+                </div>
+
+                {/* Cartes KPI énergie (EV masqué en production sans télémétrie — 5a) */}
+                <div className="xl:col-span-7 grid grid-cols-1 sm:grid-cols-2 gap-2 content-start">
+                  <EnergyCard icon={Droplets} tone="blue" label="Conso thermique estimée" unit="(L/100 km)"
+                    value={energy.estL100 !== null ? energy.estL100.toLocaleString("fr-FR") : "—"}
+                    sub={energy.fuelEstVehicles.length > 0
+                      ? `Estimation : taux configuré × km · ${energy.fuelEstVehicles.length}/${m.total} véhicules · ${energy.estLiters} L sur la période`
+                      : "Aucun taux de consommation configuré — aucune estimation affichée"}
+                    testId="energy-estimated-consumption" />
+                  {avgKwh && (
+                    <EnergyCard icon={Plug} tone="green" label="Conso électrique moyenne" unit="(kWh/100 km)"
+                      value={avgKwh} sub={`${energy.kwhs.length} EV avec télémétrie`} testId="energy-ev-kwh" />
                   )}
+                  {avgSoc !== null && (
+                    <EnergyCard icon={Battery} tone="green" label="SOC moyen EV" unit="(Électriques)"
+                      value={`${avgSoc}%`} sub={`${energy.socs.length} EV avec télémétrie batterie`} testId="energy-ev-soc" />
+                  )}
+                  {avgSoc !== null && (
+                    <EnergyCard icon={BatteryCharging} tone="red" label="EV batterie faible" unit={`(< ${threshold} %)`}
+                      value={energy.battLow.length} valueCls={energy.battLow.length ? "text-red-600" : "text-gray-300"}
+                      sub={`véhicule${energy.battLow.length > 1 ? "s" : ""} — donnée réelle et récente uniquement`}
+                      onClick={energy.battLow.length ? () => open(`Batterie EV faible (< ${threshold} %)`, energy.battLow, BatteryCharging, "orange") : undefined}
+                      testId="energy-ev-low" />
+                  )}
+                  <EnergyCard icon={Wifi} tone="green" label="Couverture télémétrie énergie" unit=""
+                    value={`${telemetryPct}%`} sub={`${energy.telemetry.length}/${m.total} véhicules avec niveau carburant ou batterie réellement mesuré`}
+                    onClick={energy.telemetry.length ? () => open("Télémétrie énergie disponible", energy.telemetry, Wifi, "green") : undefined}
+                    testId="energy-telemetry-coverage" />
                 </div>
-                <button onClick={() => energy.telemetry.length && open("Télémétrie énergie disponible", energy.telemetry, Wifi, "blue")} disabled={!energy.telemetry.length}
-                  className={`rounded-lg border border-gray-100 p-3 text-left ${energy.telemetry.length ? "hover:bg-gray-50 cursor-pointer" : "cursor-default"}`}
-                  data-testid="energy-telemetry-coverage">
-                  <div className="flex items-center gap-2 mb-1.5">
-                    <IconBadge icon={Wifi} tone="blue" size={12} className="w-6 h-6" />
-                    <span className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Couverture télémétrie énergie</span>
-                  </div>
-                  <div className="text-lg font-semibold" style={{ fontFamily: "Outfit, sans-serif" }}>{energy.telemetry.length}<span className="text-sm text-gray-400 font-normal">/{m.total}</span></div>
-                  <div className="text-[9px] text-gray-400 mt-1">véhicules avec niveau carburant ou batterie réellement mesuré (capteur obd_fuel / SoC)</div>
-                </button>
               </div>
 
-              {/* EV : chips uniquement si télémétrie réelle (5a — masqué en production sans données) */}
-              {avgSoc !== null && (
-                <div className="flex flex-wrap gap-2 text-[11px]" data-testid="ev-summary">
-                  <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 font-medium"><Battery size={12} />SoC moyen : {avgSoc} %</span>
-                  {avgKwh && <span className="inline-flex items-center gap-1.5 px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 font-medium"><Plug size={12} />Conso moyenne : {avgKwh} kWh/100 km</span>}
-                  <span className="px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700">{energy.socs.length} EV avec télémétrie batterie</span>
-                </div>
-              )}
               {energy.evKnownNoTelemetry && (
                 <div className="text-[10px] text-gray-400" data-testid="ev-no-telemetry-note">
                   Données batterie non disponibles sur les véhicules électriques/hybrides suivis.
                 </div>
               )}
-              <p className="text-[9px] text-gray-400">Motorisation : garage + correction LOGITRAK — aucune classification automatique par nom. Donnée absente ≠ niveau faible, jamais de 0 fabriqué. obd_consumption exclu (unité non confirmée).</p>
+              <p className="text-[9px] text-gray-400">Motorisation : garage + correction LOGITRAK — aucune classification automatique par nom. Donnée absente ≠ niveau faible, jamais de 0 fabriqué. obd_consumption exclu (unité non confirmée). Valeurs instantanées (SoC, couverture) sans comparaison : aucun historique stocké.</p>
             </div>
           )}
         </Panel>
@@ -638,26 +694,29 @@ export const OverviewTab = ({ data, fromDate, toDate, onNavigate, onOpenVehicle 
             {priorities.length === 0 ? (
               <div className="text-xs text-gray-400 py-4 text-center" data-testid="priorities-empty">Aucune priorité — flotte conforme aux seuils</div>
             ) : (
-              <div className="space-y-1.5">
+              <div className="divide-y divide-gray-50">
                 {priorities.map(p => (
                   <button key={p.id} onClick={p.onClick}
-                    className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-xs transition-colors ${p.sev === "red" ? "bg-red-50 text-red-700 hover:bg-red-100" : "bg-amber-50 text-amber-700 hover:bg-amber-100"}`}
+                    className="w-full flex items-center gap-2.5 px-1.5 py-2.5 hover:bg-gray-50 rounded-lg transition-colors text-left"
                     data-testid={`priority-${p.id}`}>
-                    <span className="flex items-center gap-2 text-left"><p.icon size={13} className="shrink-0" strokeWidth={2} />{p.title}</span>
-                    <span className="font-semibold shrink-0">{p.count}</span>
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${p.sev === "red" ? "bg-red-500" : "bg-orange-400"}`} />
+                    <span className="text-xs text-gray-700 flex-1">{p.title}</span>
+                    <span className={`text-xs font-bold tabular-nums ${p.sev === "red" ? "text-red-600" : "text-orange-500"}`} style={{ fontFamily: "Outfit, sans-serif" }}>{p.count}</span>
+                    <ChevronRight size={13} className="text-gray-300 shrink-0" />
                   </button>
                 ))}
               </div>
             )}
             <div className="mt-3 pt-3 border-t border-gray-100">
               <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">Actions recommandées</div>
-              <div className="space-y-1">
+              <div className="space-y-0.5">
                 {actions.map((a, i) => (
                   <button key={i} onClick={a.f || undefined} disabled={!a.f}
-                    className="w-full flex items-center justify-between gap-2 px-2.5 py-2 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors text-left disabled:hover:bg-gray-50"
+                    className="w-full flex items-center gap-2.5 px-1.5 py-2 hover:bg-gray-50 rounded-lg transition-colors text-left disabled:hover:bg-transparent"
                     data-testid={`action-${i}`}>
-                    <span className="text-[11px] text-gray-700">{a.t}</span>
-                    {a.f && <ChevronRight size={12} className="text-gray-300 shrink-0" />}
+                    <a.icon size={13} className="text-gray-400 shrink-0" strokeWidth={2} />
+                    <span className="text-[11px] text-gray-700 flex-1">{a.t}</span>
+                    {a.f && <ChevronRight size={13} className="text-gray-300 shrink-0" />}
                   </button>
                 ))}
               </div>
@@ -673,68 +732,60 @@ export const OverviewTab = ({ data, fromDate, toDate, onNavigate, onOpenVehicle 
           {maint.all.length === 0 ? (
             <div className="text-xs text-gray-400 py-4" data-testid="maintenance-empty">Aucune échéance à moins de 30 jours dans les fiches véhicules (leasing, assurance, contrôles, maintenance, expertise).</div>
           ) : (
-            <div className="space-y-3">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                {[
-                  { id: "overdue", label: "Échues", items: maint.overdue, cls: maint.overdue.length ? "bg-red-50 border-red-100 text-red-700" : "bg-gray-50 border-gray-100 text-gray-400", icon: AlertTriangle, tone: "red" },
-                  { id: "upcoming", label: "≤ 30 jours", items: maint.upcoming, cls: maint.upcoming.length ? "bg-amber-50 border-amber-100 text-amber-700" : "bg-gray-50 border-gray-100 text-gray-400", icon: Wrench, tone: "orange" },
-                  { id: "assurances", label: "Assurances", items: maint.assurances, cls: maint.assurances.length ? "bg-gray-50 border-gray-200 text-gray-700" : "bg-gray-50 border-gray-100 text-gray-400", icon: Shield, tone: "blue" },
-                  { id: "controles", label: "Contrôles", items: maint.controles, cls: maint.controles.length ? "bg-gray-50 border-gray-200 text-gray-700" : "bg-gray-50 border-gray-100 text-gray-400", icon: CheckCircle2, tone: "green" },
-                ].map(t => (
-                  <button key={t.id} onClick={() => t.items.length && open(`Maintenance & conformité : ${t.label}`, t.items, t.icon, t.tone)} disabled={!t.items.length}
-                    className={`rounded-lg border p-3 text-left transition-colors ${t.cls} ${t.items.length ? "hover:brightness-95 cursor-pointer" : "cursor-default"}`}
-                    data-testid={`maint-${t.id}`}>
-                    <t.icon size={13} strokeWidth={2} />
-                    <div className="text-lg font-semibold mt-0.5" style={{ fontFamily: "Outfit, sans-serif" }}>{t.items.length}</div>
-                    <div className="text-[10px]">{t.label}</div>
-                  </button>
-                ))}
-              </div>
-              <div>
-                <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">Prochaines échéances</div>
-                {maint.all.slice(0, 5).map((x, i) => {
-                  const KIcon = KIND_ICONS[x.kind] || Wrench;
-                  return (
-                    <button key={i} onClick={() => onOpenVehicle?.(x.tid)}
-                      className="w-full flex items-center justify-between px-2.5 py-2 rounded-lg hover:bg-gray-50 text-left transition-colors"
-                      data-testid={`deadline-row-${i}`}>
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <KIcon size={13} className="text-gray-400 shrink-0" strokeWidth={2} />
-                        <div className="min-w-0">
-                          <div className="text-xs font-medium text-gray-900 truncate">{x.label}</div>
-                          <div className="text-[10px] text-gray-400">{x.what} · {x.date}</div>
-                        </div>
-                      </div>
-                      <span className={`text-[10px] font-semibold shrink-0 ${x.valueCls}`}>{x.value}</span>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
-          <div className="text-[9px] text-gray-400 mt-3">Source : fiches véhicules LOGITRAK (dates saisies) — aucune règle de document obligatoire appliquée cette itération</div>
-        </Panel>
-
-        <Panel title="Véhicules à surveiller" testId="panel-watch" className="lg:col-span-4">
-          {watchList.length === 0 ? (
-            <div className="text-xs text-gray-400 py-4 text-center" data-testid="watch-empty">Aucun véhicule à surveiller</div>
-          ) : (
-            <div className="space-y-1.5">
-              {watchList.map(x => (
-                <button key={x.tid} onClick={() => onOpenVehicle?.(x.tid)}
-                  className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-gray-50 text-left transition-colors"
-                  data-testid={`watch-vehicle-${x.tid}`}>
-                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${x.online ? "bg-emerald-500" : "bg-gray-300"}`} title={x.online ? "En ligne" : "Hors ligne"} />
-                  <div className="min-w-0 flex-1">
-                    <div className="text-xs font-medium text-gray-900 truncate">{x.label}</div>
-                    <div className={`text-[10px] ${x.alertCls}`}>{x.alert}</div>
+            <div className="grid grid-cols-2 xl:grid-cols-4 gap-3">
+              {[
+                { id: "upcoming", icon: Wrench, tone: "blue", label: "Échéances < 30 jours", n: maint.upcoming.length, sub: `échéance${maint.upcoming.length > 1 ? "s" : ""} à venir`, delta: <DateDelta curr={maint.upcoming.length} prev={maint.prev.upcoming} testId="maint-delta-upcoming" />, btn: "Voir les échéances", items: maint.upcoming, dIcon: Wrench, dTone: "blue" },
+                { id: "assurances", icon: Shield, tone: "orange", label: "Assurances", n: maint.assurances.length, sub: "à renouveler", delta: maint.assurances.some(x => x.d < 0) ? <span className="text-[9px] font-semibold text-red-500">dont {maint.assurances.filter(x => x.d < 0).length} échue{maint.assurances.filter(x => x.d < 0).length > 1 ? "s" : ""}</span> : <span className="text-[9px] text-gray-400">aucune échue</span>, btn: "Voir les assurances", items: maint.assurances, dIcon: Shield, dTone: "orange" },
+                { id: "controles", icon: CheckCircle2, tone: "green", label: "Contrôles", n: maint.controles.length, sub: "à réaliser", delta: <DateDelta curr={maint.controles.length} prev={maint.prev.controles} testId="maint-delta-controles" />, btn: "Voir les contrôles", items: maint.controles, dIcon: CheckCircle2, dTone: "green" },
+                { id: "overdue", icon: AlertTriangle, tone: "red", label: "Échues", n: maint.overdue.length, sub: `échéance${maint.overdue.length > 1 ? "s" : ""} dépassée${maint.overdue.length > 1 ? "s" : ""}`, delta: <DateDelta curr={maint.overdue.length} prev={maint.prev.overdue} testId="maint-delta-overdue" />, btn: "Voir les échues", items: maint.overdue, dIcon: AlertTriangle, dTone: "red", danger: true },
+              ].map(t => (
+                <div key={t.id} className={`rounded-lg border p-3 flex flex-col ${t.danger && t.n > 0 ? "border-red-100 bg-red-50/40" : "border-gray-100"}`} data-testid={`maint-${t.id}`}>
+                  <div className="flex items-start gap-2">
+                    <IconBadge icon={t.icon} tone={t.tone} size={13} />
+                    <span className="text-[10px] font-semibold text-gray-600 leading-tight pt-1">{t.label}</span>
                   </div>
-                  <ChevronRight size={13} className="text-gray-300 shrink-0" />
-                </button>
+                  <div className={`text-2xl font-semibold mt-1.5 ${t.danger && t.n > 0 ? "text-red-600" : t.n > 0 ? "text-gray-900" : "text-gray-300"}`} style={{ fontFamily: "Outfit, sans-serif" }}>{t.n}</div>
+                  <div className="text-[10px] text-gray-400">{t.sub}</div>
+                  <div className="mt-1 min-h-[14px]">{t.delta}</div>
+                  <button onClick={() => t.items.length && open(`Maintenance & conformité : ${t.label}`, t.items, t.dIcon, t.dTone)} disabled={!t.items.length}
+                    className={`mt-2 w-full text-[10px] font-medium border rounded-lg px-2 py-1.5 transition-colors ${t.items.length ? "border-gray-200 text-gray-700 hover:bg-gray-50 cursor-pointer" : "border-gray-100 text-gray-300 cursor-default"}`}
+                    data-testid={`maint-${t.id}-btn`}>{t.btn}</button>
+                </div>
               ))}
             </div>
           )}
-          <div className="text-[9px] text-gray-400 mt-3">5 max — alerte principale par véhicule · clic = fiche véhicule</div>
+          <div className="text-[9px] text-gray-400 mt-3">Source : fiches véhicules LOGITRAK (dates saisies) — comparaison « vs il y a 7 j » calculée par dates, à fiches constantes. Documents manquants omis (aucune règle configurée — décision 4a).</div>
+        </Panel>
+
+        <Panel title="Véhicules à surveiller" testId="panel-watch" className="lg:col-span-4"
+          action={watch.full.length > 5 ? (
+            <button onClick={() => open("Véhicules à surveiller (liste complète)", watchItems(watch.full), Car, "orange")}
+              className="text-[10px] text-blue-600 hover:underline flex items-center gap-0.5" data-testid="watch-see-all">Voir tout ({watch.full.length})<ChevronRight size={11} /></button>
+          ) : undefined}>
+          {watch.top.length === 0 ? (
+            <div className="text-xs text-gray-400 py-4 text-center" data-testid="watch-empty">Aucun véhicule à surveiller</div>
+          ) : (
+            <div>
+              <div className="grid grid-cols-[1fr_auto] gap-2 px-1.5 pb-1.5 border-b border-gray-100">
+                <span className="text-[9px] font-semibold uppercase tracking-wider text-gray-400">Véhicule</span>
+                <span className="text-[9px] font-semibold uppercase tracking-wider text-gray-400">Alerte</span>
+              </div>
+              <div className="divide-y divide-gray-50">
+                {watch.top.map(x => (
+                  <button key={x.tid} onClick={() => onOpenVehicle?.(x.tid)}
+                    className="w-full flex items-center gap-2.5 px-1.5 py-2.5 hover:bg-gray-50 rounded-lg text-left transition-colors"
+                    data-testid={`watch-vehicle-${x.tid}`}>
+                    <div className="min-w-0 flex-1">
+                      <div className="text-xs font-medium text-gray-900 truncate">{x.label}{plateOf(x.tid) ? <span className="text-gray-400 font-normal"> – {plateOf(x.tid)}</span> : ""}</div>
+                    </div>
+                    <span className={`w-2 h-2 rounded-full shrink-0 ${x.dot}`} />
+                    <span className={`text-[10px] ${x.alertCls} shrink-0 max-w-[45%] truncate text-right`}>{x.alert}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="text-[9px] text-gray-400 mt-3">Alerte principale par véhicule · clic = fiche véhicule</div>
         </Panel>
       </div>
 

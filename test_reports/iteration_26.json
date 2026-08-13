@@ -1,0 +1,22 @@
+{
+  "summary": "Test frontend-only du restyling L3/L4 de la Vue générale (Dashboard V2) — TOUTES les 7 exigences de la review passent. FLEXMOBIL (via SUPER_ADMIN → Clients → Aperçu client) : energy-donut affiche '52 véhicules' au centre, légende Thermique 37 (71.2 %) + Inconnu 15 (28.8 %) — cartes EV (energy-ev-kwh/-soc/-low) TOUTES absentes du DOM ✓ ; energy-estimated-consumption affiche '—' + 'Aucun taux de consommation configuré — aucune estimation affichée' ✓ ; energy-telemetry-coverage = 37 % avec sous-libellé '19/52 véhicules' ✓ ; clic sur energy-mix-thermique → drawer 37 rows, clic energy-mix-inconnu → 15 rows, clic energy-telemetry-coverage → drawer 19 rows uniques (aucun doublon tracker_id) ✓. Priorités : 4 items (priority-offline-long 17, priority-offline-recent 19, priority-underused 2, priority-highuse 10), clic sur priority-offline-long → drawer 17 rows == compteur ✓. Actions recommandées : 3 items (action-0..2). Panel-maintenance affiche 'Aucune échéance à moins de 30 jours…' — état vide propre (FlexMobil n'a pas de vehicle_admin) ✓. Panel-watch : 5 lignes top + watch-see-all 'Voir tout (42)' → drawer 42 items complets, clic sur drawer-vehicle-* → capabilities-panel s'ouvre (fiche véhicule) ✓. Régression L1/L2 : kpi-active/offline/inactive/utilization/distance/critical présents avec deltas ▲/▼ (delta-active '▲ +1', delta-inactive '▼ -1', delta-utilization '▲ +8.8 pts', delta-distance '▲ +8329 km') ; util-bar-inactif=17, sous_utilise=2, normale=23, tres_utilise=10 → somme 52 ✓ ; panel-daily-activity présent ✓. Responsive 1366 et 1024 px : donut rendu correctement, body scrollWidth == viewport, aucun débordement ✓. DEMO EV : donut '5 véhicules' (Thermique 1 · Hybride 1 · Électrique 3) ✓ ; energy-ev-kwh=16.8 (4 EV avec télémétrie), energy-ev-soc=58 % (4 EV), energy-ev-low=1 véhicule (clic → drawer 1 ligne contenant 'Zoe') ✓ ; energy-telemetry-coverage=100 % (5/5) ✓ ; priority-batt-low affiche compteur 1 avec dot ORANGE (bg-orange-400, jamais rouge) ✓. TECHLIFT : maintenance-empty visible (le tenant n'a aucune fiche vehicle_admin avec échéance < 30 j — le kpi-critical L1 '14' vient d'une source différente : hors-ligne prolongé + règles L1). Aucune erreur console bloquante — uniquement 2 × 401 initiaux préexistants (mêmes que iter 24/25).",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Techlift ne possède aucune fiche vehicle_admin avec date < 30 j : la review demandait de vérifier les 4 cartes maint-* sur un tenant qui a des échéances, mais aucun tenant seedé n'en a. L'état vide (maintenance-empty) est bien géré et pas de 0 fabriqué — conforme à la spec. Recommandation optionnelle : seeder au moins une fiche vehicle_admin sur un tenant de démo pour couvrir visuellement les 4 cartes maint-upcoming/assurances/controles/overdue + leurs deltas 'vs il y a 7 j' en environnement de test."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "n/a (frontend only)", "frontend": "100 % sur les 7 critères review_request" },
+  "seed_data_creation": "Aucune. Impersonation lecture-seule FlexMobil + DEMO EV + Techlift via 'Aperçu client'.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "SUPER_ADMIN admin@logitrak.ch / LT!u4qv8ibtN21iOHDz (voir /app/memory/test_credentials.md)",
+  "context_for_next_testing_agent": "Iteration_26 valide TOTALEMENT le restyling L3/L4 : donut motorisation, cartes énergie (avec masquage EV en prod / affichage en démo), priorités avec dot coloré + compteur, actions recommandées, panel-watch avec 'Voir tout (n)' + drawer + navigation fiche. Non-régression L1/L2 OK (deltas, catégories util, activité quotidienne). Aucun bug frontend détecté. Le seul point non couvert par manque de seed : l'affichage des 4 cartes maint-* peuplées avec leurs deltas — à re-tester le jour où un tenant obtient des fiches vehicle_admin avec échéances.",
+  "rca_of_the_issue": "N/A — aucun bug trouvé. Implementation OverviewTab.jsx conforme à la spec (ENERGY_META donut, EnergyCard, cartes maintenance avec DateDelta, watch.top/watch.full + watch-see-all)."
+}
