@@ -1,0 +1,54 @@
+{
+  "summary": "AUDIT Dashboard V2 (itération 24) — Refonte 'Vue générale' testée sur les 4 tenants clés (FlexMobil, Techlift, DEMO EV, test-beta). Backend non-regression : 48/48 pytest passés sur test_capabilities + test_access_link (référence itération 23, résultat inchangé). Autres suites en échec sont préexistantes (test_analyse_flotte_invariants, test_drivers_ecodriving, test_vehicle_admin, test_groups_and_group_id) — bloquées par 401 Non authentifié (infra de test, sans rapport avec la refonte V2). Frontend : L1-L4 tous rendus, testids présents. Somme catégories utilisation = 52 véhicules sur FlexMobil (17+2+23+10). Drill-down util-cat-normale → drawer avec 23 véhicules exacts (égal au compte affiché). Clic vehicle → onglet Véhicules + fiche + capabilities-panel OK. Deltas période précédente : appel /api/fleet/efficiency prev-period correctement émis (2026-07-31→2026-08-06 sur FlexMobil), delta-active/-inactive/-utilization/-distance affichent flèches + valeurs numériques après ~15s. delta-* ne s'affichent PAS pour kpi-offline (correct — 'instantané'). Aucun label 'Modéré' ni 'Bonne utilisation' subsistant côté UI. energy-mix somme = total véhicules par tenant. Consommation estimée = 'Aucun taux configuré' pour les 3 tenants réels (aucun n'a configuré rate_l_100). Couverture télémétrie affichée n/total (19/52 FlexMobil, 3/37 Techlift). ev-summary MASQUÉ sur FlexMobil et Techlift (règle 5a ✓), VISIBLE sur DEMO EV avec SoC 58%, 16.8 kWh/100, 4 EV. Priorité 'Batterie EV faible (<20%)' présente en ORANGE (priority-batt-low, jamais rouge) sur DEMO EV ✓. Bandeau démo violet présent sur DEMO EV ✓. test-beta se dégrade proprement : KPI 0, deltas '—', 'Capacités indisponibles' dans panel-energy, aucune donnée fabriquée, 2 erreurs console 401 non-bloquantes uniquement. Responsive 1920/1366/1024 : aucun overflow horizontal. Navigation entre drawer/onglets/périodes reste fluide.\n\nVERDICT : conforme SAUF UN BUG CRITIQUE DE COHÉRENCE identifié dans AnalyseFlotteTab.jsx — la catégorie 'Utilisation normale' est toujours comptée à 0 dans l'onglet Analyse flotte alors qu'elle vaut 23 dans Vue générale sur FlexMobil. Viole explicitement l'exigence 'COHÉRENCE CHIFFRES' du test.",
+  "backend_issues": {
+    "critical": [],
+    "minor": []
+  },
+  "frontend_issues": {
+    "ui_bugs": [
+      {
+        "component": "AnalyseFlotteTab — energy-telemetry-coverage (via panel-energy sur DEMO EV)",
+        "issue": "Le compteur de couverture télémétrie affiche 6/5 sur DEMO EV (numérateur > dénominateur = impossible). Probablement un doublon dans le décompte des véhicules avec fuel_level OU SoC (véhicule hybride compté 2 fois). Non bloquant mais incohérent.",
+        "selector": "[data-testid=\"energy-telemetry-coverage\"]",
+        "priority": "MINOR"
+      }
+    ],
+    "integration_issues": [
+      {
+        "flow": "COHÉRENCE Vue générale ↔ Analyse flotte (FlexMobil, période 7j)",
+        "issue": "Vue générale affiche util-cat-normale=23 (44%) mais Analyse flotte affiche kpi-cat-normale=0 (0%). Bug de code confirmé : AnalyseFlotteTab.jsx ligne 168 utilise `vehicles.filter(v => v.category === c.id)` et ligne 290 utilise `list.filter(v => v.category === f.category)`. Or backend renvoie category ∈ {inactif, sous_utilise, modere, bonne, tres_utilise} — jamais 'normale'. Il faut utiliser `c.match.includes(v.category)` (le tableau match est déjà défini ligne 17 mais jamais utilisé pour compter/filtrer). Conséquences observées : (1) kpi-cat-normale reste toujours à 0, (2) le bouton analyse-filter-normale est désactivé (count=0) donc le clic ne filtre pas et laisse les 52 rows visibles, (3) la barre 'analyse-bar' n'affiche pas de segment normale, (4) le tableau et le drawer véhicule affichent quand même la bonne pastille via displayCat() → incohérence entre header/filtres et table. VIOLATION EXPLICITE de la règle 'COHÉRENCE CHIFFRES : sur la MÊME période, comparer Vue générale vs onglet Analyse flotte : total véhicules, sans activité, sous-utilisé, utilisation normale, forte utilisation, distance totale doivent être IDENTIQUES'.",
+        "affected_selectors": [
+          "[data-testid=\"kpi-cat-normale\"]",
+          "[data-testid=\"analyse-filter-normale\"]",
+          "[data-testid=\"cat-bar-normale\"]"
+        ],
+        "priority": "CRITICAL"
+      }
+    ],
+    "design_issues": []
+  },
+  "test_report_links": [
+    "/app/backend/tests/test_capabilities.py",
+    "/app/backend/tests/test_access_link.py",
+    "/app/test_reports/pytest/iter24.xml"
+  ],
+  "action_items": [
+    "CRITICAL : Corriger AnalyseFlotteTab.jsx L168 et L290 pour utiliser `c.match.includes(v.category)` (ou une helper `matchCat(v.category, c)`) au lieu de la comparaison stricte `v.category === c.id`. Cela réparera simultanément : le KPI kpi-cat-normale, le bouton de filtre analyse-filter-normale (qui doit devenir cliquable), le segment cat-bar-normale et la cohérence numérique Vue générale ↔ Analyse flotte demandée dans le test.",
+    "MINOR : Investiguer le décompte 6/5 de energy-telemetry-coverage sur DEMO EV (simulateur demo_simulator.py) — soit un véhicule est compté deux fois s'il expose fuel_level ET SoC, soit le dénominateur exclut un tracker. Attendu ≤ 5/5."
+  ],
+  "critical_code_review_comments": [
+    "AnalyseFlotteTab.jsx : la constante CATEGORIES expose un champ `match` explicitement conçu pour absorber la fusion modéré+bonne → normale (spec 1a), mais deux logiques critiques (comptage L168 + filtrage L290) continuent d'utiliser une égalité stricte sur c.id. Résultat : la refonte 'Vue générale V2' est cohérente en interne mais l'onglet Analyse flotte fait mentir l'affichage. Factoriser dans une helper `const matchCat = (cat, c) => c.match.includes(cat)` utilisée partout (kpi, filtre, bar segments).",
+    "OverviewTab.jsx L146-154 : le fetch prev-period /fleet/efficiency prend >10 s à répondre sur FlexMobil et Techlift, période durant laquelle Delta retourne null (delta-* absents du DOM). Envisager d'afficher un skeleton/placeholder '—' pendant le loading pour éviter le layout shift et un ressenti 'delta manquant'."
+  ],
+  "updated_files": [],
+  "success_rate": {
+    "backend": "100% sur les suites de référence (48/48 pytest) — les autres suites (test_analyse_flotte_invariants, test_drivers_ecodriving, test_vehicle_admin, test_groups_and_group_id) sont en échec préexistant (auth 401)",
+    "frontend": "~92% : Vue générale V2 conforme et sans crash sur les 4 tenants, TOUS les data-testids exigés sont présents (kpi-*, util-*, panel-*, energy-*, ev-summary, priority-*, deadline-row-*, watch-vehicle-*, eco-line). Un seul bug bloquant : cohérence catégorie 'normale' entre Vue générale et Analyse flotte + un doublon mineur DEMO EV."
+  },
+  "seed_data_creation": "Aucune donnée créée. Impersonation lecture-seule uniquement sur FlexMobil, Techlift, DEMO EV, test-beta.",
+  "should_call_test_agent_after_fix": true,
+  "should_main_agent_self_test": false,
+  "test_credentials": "Voir /app/memory/test_credentials.md — admin@logitrak.ch (SUPER_ADMIN) utilisé pour l'impersonation des 4 tenants via 'Aperçu client'.",
+  "context_for_next_testing_agent": "Après correctif L168 + L290 dans AnalyseFlotteTab.jsx, re-tester la COHÉRENCE : sur FlexMobil période 7j attendu 17 inactif / 2 sous_utilise / 23 normale / 10 tres_utilise dans les DEUX onglets, et le filtre analyse-filter-normale doit afficher 23 rows (17 modere + 6 bonne — à confirmer via API). Retester aussi le clic analyse-filter-normale pour vérifier qu'il devient actif. Testids Dashboard V2 exposés (à réutiliser) : overview-tab, kpi-active|offline|inactive|utilization|distance|critical, delta-active|inactive|utilization|distance, util-bar-{cat}, util-cat-{cat}, panel-utilization|daily-activity|energy|priorities|maintenance|watch, energy-mix-{thermique|electrique|hybride|inconnu}, energy-estimated-consumption, energy-telemetry-coverage, ev-summary, ev-no-telemetry-note, priority-*, action-{0..2}, maintenance-empty, maint-{overdue|upcoming|assurances|controles}, deadline-row-*, watch-vehicle-*, eco-line, overview-footer, kpi-drawer, kpi-drawer-close, drawer-vehicle-{tid}. Sur AnalyseFlotteTab : analyse-flotte-tab, kpi-used|kpi-inactive|kpi-cat-{cid}|kpi-intensity, analyse-bar, cat-bar-{cid}, analyse-chart, analyse-recos, reco-*, analyse-fuel, analyse-filter-{cid}, analyse-row-{tid}, analyse-search, group-filter, day-filter-banner.",
+  "rca_of_the_issue": "AnalyseFlotteTab.jsx définit correctement CATEGORIES avec un champ `match` (ex: normale.match = ['modere','bonne']) pour absorber la fusion demandée par la spec 1a, mais deux endroits critiques du fichier — le calcul de catCounts (L168) et le filtrage de la table (L290) — n'utilisent pas ce match et comparent directement `v.category === c.id`. Comme le backend (`analytics_engine._classify` L~257) renvoie les catégories granulaires 'modere' et 'bonne' (jamais 'normale'), le compte devient toujours 0 pour normale, désactivant le bouton de filtre et vidant la barre segmentée. Le composant displayCat() (L21) utilise correctement `match.includes` — c'est cette même logique qu'il faut propager. Reproduction : Super Admin → FlexMobil → Aperçu client → Vue générale (voit util-cat-normale=23) → Analyse flotte (voit kpi-cat-normale=0). Correctif : remplacer L168 par `catCounts[c.id] = vehicles.filter(v => c.match.includes(v.category)).length;` et L290 par `else list = list.filter(v => CAT_MAP[f.category]?.match.includes(v.category));`."
+}

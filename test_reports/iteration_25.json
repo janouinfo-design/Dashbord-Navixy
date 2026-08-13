@@ -1,0 +1,22 @@
+{
+  "summary": "RETEST CIBLÉ iteration_25 — Les 2 correctifs signalés dans iteration_24 sont VALIDÉS. FIX 1 (CRITICAL cohérence Utilisation normale) : sur FlexMobil (Super Admin → Aperçu client → 7 jours), la Vue générale et l'Analyse flotte affichent DÉSORMAIS des comptes strictement identiques catégorie par catégorie — inactif 17 / sous_utilise 2 / normale 23 / tres_utilise 10 = 52 véhicules dans les DEUX onglets. kpi-cat-normale = 23 (44%) exactement comme util-cat-normale. Le bouton analyse-filter-normale est cliquable et étiqueté « Utilisation normale (23) » ; clic → la table filtre à 23 rows exactement. cat-bar-normale est présent et visible avec le texte '23'. kpi-cat-normale filtre également la table à 23 rows. Le drawer util-cat-normale ouvre 23 véhicules exacts et le clic sur un véhicule ouvre la fiche (capabilities-panel présent). FIX 2 (MINOR télémétrie 6/5) : sur DEMO EV, energy-telemetry-coverage affiche 5/5 (au lieu de 6/5). Le drawer contient 5 lignes uniques (aucun tracker_id en double). Le véhicule hybride DEMO Volvo XC60 PHEV combine bien fuel + SoC sur UNE seule ligne ('39 % · ⚡ 71 %'). Amélioration Delta : les 4 chips delta (delta-active/inactive/utilization/distance) affichent '…' pendant la période de loading (visible ici sur FlexMobil car le fetch prev-period est en cours), aucune erreur console bloquante — placeholder animé conforme à la spec. Régression rapide : Vue générale FlexMobil rendue sans erreur bloquante (seulement 2 erreurs 401 initiales non bloquantes — préexistantes iter24), navigation Vue générale ↔ Analyse flotte ↔ fiche véhicule fluide.",
+  "backend_issues": { "critical": [], "minor": [] },
+  "frontend_issues": {
+    "ui_bugs": [],
+    "integration_issues": [],
+    "design_issues": []
+  },
+  "test_report_links": [],
+  "action_items": [],
+  "critical_code_review_comments": [
+    "Optionnel : le fetch prev-period (/fleet/efficiency) sur FlexMobil met encore plusieurs secondes à répondre. Le placeholder '…' ajouté couvre bien le layout shift, mais un cache client court (SWR/react-query) éviterait de refetcher à chaque changement de tenant."
+  ],
+  "updated_files": [],
+  "success_rate": { "backend": "n/a (frontend only)", "frontend": "100% sur le périmètre demandé (2 fixes + régression)" },
+  "seed_data_creation": "Aucune. Impersonation lecture-seule FlexMobil + DEMO EV.",
+  "should_call_test_agent_after_fix": false,
+  "should_main_agent_self_test": true,
+  "test_credentials": "SUPER_ADMIN admin@logitrak.ch (voir /app/memory/test_credentials.md) — impersonation FlexMobil + DEMO EV via 'Aperçu client'",
+  "context_for_next_testing_agent": "Iteration_25 valide les 2 fixes de iteration_24. Les invariants cohérence Vue générale ↔ Analyse flotte tiennent sur FlexMobil 7j (17/2/23/10 = 52). Les compteurs télémétrie DEMO EV = 5/5 sans doublon. Rien d'autre à retester sur le Dashboard V2 sauf régression post-changement futur.",
+  "rca_of_the_issue": "Les 2 correctifs de code étaient déjà présents à l'inspection : AnalyseFlotteTab.jsx L168 utilise `c.match.includes(v.category)` et L290 utilise `(CAT_MAP[f.category]?.match || [f.category]).includes(v.category)` ; OverviewTab.jsx pousse une SEULE entrée telemetry par véhicule (parts combinées carburant + SoC). Le retest UI confirme les valeurs attendues à l'écran."
+}

@@ -101,3 +101,7 @@
 #====================================================================================================
 # Testing Data - Main Agent and testing sub agent both should log testing data below this section
 #====================================================================================================
+## 2026-06 — Dashboard V2 (refonte Vue générale décisionnelle)
+agent_communication:
+  - agent: "main"
+    message: "Refonte complète OverviewTab.jsx selon plan validé (décisions 1a/2b/3a/4a/5a) : L1=6 KPI (actifs, hors ligne, sans activité, utilisation %, distance, alertes critiques) avec delta période précédente (— si indisponible) ; L2=barre utilisation 4 catégories affichées (fusion modéré+bonne='Utilisation normale', seuils backend INCHANGÉS) + activité quotidienne (agrégation hebdo >31j) ; L3=Énergie & consommation (mix motorisation, conso ESTIMÉE avec couverture, couverture télémétrie, EV masqué prod/affiché démo) + Priorités du jour (rouge=critique règle 2b : assurance/contrôle échu + hors ligne >48h ; orange=à surveiller) + actions ; L4=Maintenance & conformité (échues/≤30j/assurances/contrôles depuis vehicle_admin) + Véhicules à surveiller (5 max). Éco-conduite = ligne compacte. EnergySection.jsx SUPPRIMÉ (absorbé). AnalyseFlotteTab.jsx harmonisé (4 catégories affichage, mêmes libellés). Aucun changement backend. Tous drill-downs = drawers → fiche véhicule."

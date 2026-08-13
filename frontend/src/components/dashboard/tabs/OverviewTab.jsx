@@ -1,57 +1,43 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { API, api } from "@/lib/api";
 import {
-  Truck, AlertTriangle, WifiOff, Gauge, ChevronRight, Users,
-  Fuel, Zap, Clock, MapPin, Route
+  AlertTriangle, WifiOff, ChevronRight, X, Fuel, Zap, Leaf, HelpCircle,
+  CalendarClock, ShieldAlert, Truck, Activity, Gauge, Wrench, Users
 } from "lucide-react";
 import {
-  ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip,
-  ResponsiveContainer, Legend, AreaChart, Area, PieChart, Pie, Cell
+  ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
 } from "recharts";
-import { EnergySection } from "./EnergySection";
 
-// ═══ Categories — same source of truth as Analyse flotte ═══
-const CATEGORIES = [
-  { id: "inactif", label: "Sans activite", color: "#9CA3AF", text: "text-gray-600", seuil: "0%" },
-  { id: "sous_utilise", label: "Sous-utilise", color: "#EF4444", text: "text-red-600", seuil: "< 30%" },
-  { id: "modere", label: "Modere", color: "#F59E0B", text: "text-amber-600", seuil: "30–59%" },
-  { id: "bonne", label: "Bonne utilisation", color: "#10B981", text: "text-emerald-600", seuil: "60–84%" },
-  { id: "tres_utilise", label: "Forte utilisation", color: "#3B82F6", text: "text-blue-600", seuil: "≥ 85%" },
+// ═══ Catégories d'AFFICHAGE (décision 1a) — seuils/calculs backend inchangés ═══
+const DISPLAY_CATEGORIES = [
+  { id: "inactif", match: ["inactif"], label: "Sans activité", color: "#9CA3AF", text: "text-gray-600", seuil: "0%" },
+  { id: "sous_utilise", match: ["sous_utilise"], label: "Sous-utilisé", color: "#EF4444", text: "text-red-600", seuil: "< 30%" },
+  { id: "normale", match: ["modere", "bonne"], label: "Utilisation normale", color: "#10B981", text: "text-emerald-600", seuil: "30–84%" },
+  { id: "tres_utilise", match: ["tres_utilise"], label: "Forte utilisation", color: "#3B82F6", text: "text-blue-600", seuil: "≥ 85%" },
 ];
-const CAT_MAP = Object.fromEntries(CATEGORIES.map(c => [c.id, c]));
-const DAYS_FR = ["Dim", "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam"];
-const dayFR = (ds) => DAYS_FR[new Date(ds + "T00:00:00").getDay()];
+const displayCat = (backendCat) => DISPLAY_CATEGORIES.find(c => c.match.includes(backendCat)) || DISPLAY_CATEGORIES[0];
 
-// ═══ Small SVG donut ═══
-const Donut = ({ pct, color, size = 56 }) => {
-  const r = (size - 8) / 2;
-  const c = 2 * Math.PI * r;
-  return (
-    <svg width={size} height={size} className="shrink-0">
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke="#f3f4f6" strokeWidth="7" />
-      <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={color} strokeWidth="7"
-        strokeDasharray={`${(pct / 100) * c} ${c}`} strokeLinecap="round"
-        transform={`rotate(-90 ${size / 2} ${size / 2})`} />
-    </svg>
-  );
+const ENERGY_META = {
+  thermique: { label: "Thermique", icon: Fuel, cls: "text-gray-700" },
+  electrique: { label: "Électrique", icon: Zap, cls: "text-emerald-600" },
+  hybride: { label: "Hybride", icon: Leaf, cls: "text-teal-600" },
+  inconnu: { label: "Inconnu", icon: HelpCircle, cls: "text-gray-400" },
+};
+const energyOf = (m) => {
+  const n = m?.normalized;
+  if (n === "diesel" || n === "petrol") return "thermique";
+  if (n === "electric") return "electrique";
+  if (n === "hybrid" || n === "phev") return "hybride";
+  return "inconnu";
 };
 
-const Panel = ({ title, children, action, testId, className = "" }) => (
-  <div className={`bg-white rounded-xl border border-gray-200 shadow-sm p-5 ${className}`} data-testid={testId}>
-    <div className="flex items-center justify-between mb-4">
-      <h4 className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">{title}</h4>
-      {action}
-    </div>
-    {children}
-  </div>
-);
-
-const initials = (name) => name.split(" ").map(w => w[0]).join("").slice(0, 2).toUpperCase();
-const starColorCls = (stars) => stars >= 4 ? "text-emerald-600" : stars === 3 ? "text-amber-600" : "text-red-500";
-
+const OFFLINE_PROLONGED_HOURS = 48; // règle 2b : hors ligne prolongé = critique
+const DAYS_FR = ["Dim", "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam"];
+const dayFR = (ds) => DAYS_FR[new Date(ds + "T00:00:00").getDay()];
 const fmtDate = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+const daysTo = (ds) => ds ? Math.round((new Date(ds + "T00:00:00") - new Date().setHours(0, 0, 0, 0)) / 86400000) : null;
 
-// Previous period of identical length, immediately before fromDate
+// Période précédente de longueur identique, immédiatement avant fromDate
 const prevRange = (fromDate, toDate) => {
   const d1 = new Date(fromDate + "T00:00:00");
   const d2 = new Date(toDate + "T00:00:00");
@@ -61,9 +47,15 @@ const prevRange = (fromDate, toDate) => {
   return { from: fmtDate(pFrom), to: fmtDate(pTo) };
 };
 
-// Real delta vs previous period. goodWhenUp: true|false|undefined (neutral)
-const Delta = ({ curr, prev, unit = "", goodWhenUp, prevPeriod, testId }) => {
-  if (prev === null || prev === undefined) return null;
+// Delta réel vs période précédente — « — » si comparaison indisponible (jamais de valeur inventée)
+const Delta = ({ curr, prev, unit = "", goodWhenUp, prevPeriod, testId, state }) => {
+  if (state === "loading") {
+    return <span className="inline-flex items-center px-1.5 py-0.5 rounded-md border text-[9px] font-semibold text-gray-300 bg-gray-50 border-gray-100 animate-pulse" data-testid={testId}>…</span>;
+  }
+  if (state === "none" || prev === null || prev === undefined) {
+    return <span className="inline-flex items-center px-1.5 py-0.5 rounded-md border text-[9px] font-semibold text-gray-300 bg-gray-50 border-gray-100"
+      title="Comparaison avec la période précédente indisponible" data-testid={testId}>—</span>;
+  }
   const diff = Math.round((curr - prev) * 10) / 10;
   let cls = "text-gray-400 bg-gray-50 border-gray-200";
   if (diff !== 0 && goodWhenUp !== undefined) {
@@ -75,436 +67,650 @@ const Delta = ({ curr, prev, unit = "", goodWhenUp, prevPeriod, testId }) => {
   const arrow = diff > 0 ? "▲" : diff < 0 ? "▼" : "=";
   return (
     <span className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md border text-[9px] font-semibold ${cls}`}
-      title={`Période précédente (${prevPeriod.from} au ${prevPeriod.to}) : ${prev}${unit}`}
-      data-testid={testId}>
+      title={`Période précédente (${prevPeriod.from} au ${prevPeriod.to}) : ${prev}${unit}`} data-testid={testId}>
       {arrow} {diff > 0 ? "+" : ""}{diff}{unit}
     </span>
   );
 };
 
+// ═══ Drawer liste véhicules (drill-down — clic = fiche véhicule) ═══
+const Drawer = ({ title, items, onClose, onOpenVehicle }) => (
+  <>
+    <div className="fixed inset-0 bg-black/20 z-40" onClick={onClose} />
+    <div className="fixed inset-y-0 right-0 w-full sm:w-[420px] bg-white shadow-2xl z-[70] overflow-y-auto" data-testid="kpi-drawer">
+      <div className="sticky top-0 bg-white border-b border-gray-200 px-5 py-4 flex items-center justify-between">
+        <div>
+          <h4 className="text-sm font-semibold text-gray-900">{title}</h4>
+          <p className="text-[10px] text-gray-400">{items.length} élément{items.length > 1 ? "s" : ""} — cliquez pour ouvrir la fiche</p>
+        </div>
+        <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-lg" data-testid="kpi-drawer-close"><X size={16} className="text-gray-500" /></button>
+      </div>
+      <div className="p-3">
+        {items.map((it, idx) => (
+          <button key={`${it.tid}-${idx}`} onClick={() => onOpenVehicle?.(it.tid)}
+            className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg hover:bg-gray-50 text-left transition-colors"
+            data-testid={`drawer-vehicle-${it.tid}`}>
+            <div>
+              <div className="text-xs font-medium text-gray-900">{it.label}</div>
+              {it.sub && <div className="text-[10px] text-gray-400">{it.sub}</div>}
+            </div>
+            <div className="flex items-center gap-2">
+              {it.value != null && <span className={`text-xs font-semibold tabular-nums ${it.valueCls || "text-gray-700"}`}>{it.value}</span>}
+              <ChevronRight size={13} className="text-gray-300" />
+            </div>
+          </button>
+        ))}
+        {items.length === 0 && <div className="text-xs text-gray-400 text-center py-8">Aucun véhicule</div>}
+      </div>
+    </div>
+  </>
+);
+
+const Panel = ({ title, children, action, testId, className = "" }) => (
+  <div className={`bg-white rounded-xl border border-gray-200 shadow-sm p-5 ${className}`} data-testid={testId}>
+    <div className="flex items-center justify-between mb-3">
+      <h4 className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">{title}</h4>
+      {action}
+    </div>
+    {children}
+  </div>
+);
+
 export const OverviewTab = ({ data, fromDate, toDate, onNavigate, onOpenVehicle }) => {
-  const { stats, trends, efficiency } = data;
+  const { stats, efficiency } = data;
   const vehicles = stats?.vehicles || [];
   const effVehicles = efficiency?.vehicles || [];
   const effSummary = efficiency?.summary || {};
-  const trendData = trends?.trends || [];
+  const [drawer, setDrawer] = useState(null);
+  const open = (title, items) => setDrawer({ title, items });
 
-  // ---- Eco-driving (lazy, shares backend cache with Conducteurs) ----
-  const [eco, setEco] = useState({ loading: true, data: null, error: null });
+  // ---- Capabilities + fiches admin (mêmes sources que l'onglet Véhicules — cache backend 6 h) ----
+  const [caps, setCaps] = useState(null);
+  const [adminRecs, setAdminRecs] = useState({});
+  useEffect(() => {
+    api.get(`${API}/vehicles/capabilities`).then(r => setCaps(r.data.success ? r.data : { success: false })).catch(() => setCaps({ success: false }));
+    api.get(`${API}/vehicles/admin`).then(r => { if (r.data.success) setAdminRecs(r.data.records || {}); }).catch(() => {});
+  }, []);
+
+  // ---- Éco-conduite (lazy — partage le cache backend avec l'onglet Conducteurs) ----
+  const [eco, setEco] = useState({ loading: true, data: null });
   useEffect(() => {
     let cancelled = false;
-    setEco({ loading: true, data: null, error: null });
+    setEco({ loading: true, data: null });
     api.get(`${API}/drivers/ecodriving`, { params: { from_date: fromDate, to_date: toDate }, timeout: 120000 })
-      .then(res => { if (!cancelled) setEco({ loading: false, data: res.data.success ? res.data : null, error: res.data.success ? null : "indisponible" }); })
-      .catch(() => { if (!cancelled) setEco({ loading: false, data: null, error: "indisponible" }); });
+      .then(res => { if (!cancelled) setEco({ loading: false, data: res.data.success ? res.data : null }); })
+      .catch(() => { if (!cancelled) setEco({ loading: false, data: null }); });
     return () => { cancelled = true; };
   }, [fromDate, toDate]);
 
-  // ---- Previous period (real LOGITRAK data via /fleet/efficiency) ----
+  // ---- Période précédente (données réelles /fleet/efficiency — aucune valeur inventée) ----
   const prevPeriod = useMemo(() => prevRange(fromDate, toDate), [fromDate, toDate]);
-  const [prevEff, setPrevEff] = useState(null);
+  const [prevEff, setPrevEff] = useState({ state: "loading", data: null });
   useEffect(() => {
     let cancelled = false;
-    setPrevEff(null);
+    setPrevEff({ state: "loading", data: null });
     api.get(`${API}/fleet/efficiency`, { params: { from_date: prevPeriod.from, to_date: prevPeriod.to } })
-      .then(res => { if (!cancelled) setPrevEff(res.data.success ? res.data : null); })
-      .catch(() => { if (!cancelled) setPrevEff(null); });
+      .then(res => { if (!cancelled) setPrevEff(res.data.success ? { state: "ok", data: res.data } : { state: "none", data: null }); })
+      .catch(() => { if (!cancelled) setPrevEff({ state: "none", data: null }); });
     return () => { cancelled = true; };
   }, [prevPeriod]);
 
   const pm = useMemo(() => {
-    if (!prevEff) return null;
-    const pv = prevEff.vehicles || [];
-    const used = pv.filter(v => v.active_days > 0).length;
-    const catCounts = {};
-    CATEGORIES.forEach(c => { catCounts[c.id] = pv.filter(v => v.category === c.id).length; });
-    const totalKm = prevEff.summary?.total_mileage || 0;
-    const kmPerUsed = used > 0 ? Math.round(totalKm / used) : 0;
-    return { used, catCounts, totalKm: Math.round(totalKm), kmPerUsed };
+    if (prevEff.state !== "ok") return null;
+    const pv = prevEff.data.vehicles || [];
+    return {
+      used: pv.filter(v => v.active_days > 0).length,
+      inactive: pv.filter(v => v.active_days === 0).length,
+      avgUtil: prevEff.data.summary?.average_utilization_pct ?? null,
+      totalKm: Math.round(prevEff.data.summary?.total_mileage || 0),
+    };
   }, [prevEff]);
 
-  // ---- Core computations (all from real endpoints) ----
+  const threshold = caps?.fuel_low_threshold_pct ?? 20;
+  const capsRecs = caps?.records || {};
+  const plateOf = (tid) => capsRecs[String(tid)]?.reg_number || null;
+
+  // ═══ Cœur des calculs — population = /fleet/efficiency (identique à Analyse flotte) ═══
   const m = useMemo(() => {
     const total = effVehicles.length;
     const used = effVehicles.filter(v => v.active_days > 0);
     const inactive = effVehicles.filter(v => v.active_days === 0);
     const catCounts = {};
-    CATEGORIES.forEach(c => { catCounts[c.id] = effVehicles.filter(v => v.category === c.id).length; });
+    const catItems = {};
+    DISPLAY_CATEGORIES.forEach(c => {
+      const list = effVehicles.filter(v => c.match.includes(v.category));
+      catCounts[c.id] = list.length;
+      catItems[c.id] = list.map(v => ({
+        tid: v.tracker_id, label: v.label, value: `${v.utilization_pct} %`,
+        sub: `${plateOf(v.tracker_id) ? plateOf(v.tracker_id) + " · " : ""}${v.active_days}/${v.total_days} jours actifs · ${v.period_mileage} km`,
+      }));
+    });
     const totalKm = Math.round((effSummary.total_mileage || 0) * 10) / 10;
-    const kmPerUsed = used.length > 0 ? Math.round(totalKm / used.length) : 0;
+    const avgUtil = effSummary.average_utilization_pct ?? null;
 
-    const offline = vehicles.filter(v => v.connection_status !== "active");
+    // Hors ligne — instantané (règle 2b : prolongé > 48 h ou jamais connecté = critique)
     const now = Date.now();
-    const offline24h = offline.filter(v => v.last_update && (now - new Date(v.last_update).getTime()) > 86400000);
-    const strongUtil = effVehicles.filter(v => v.category === "tres_utilise");
-    const lowUtil = effVehicles.filter(v => v.category === "sous_utilise");
+    const offline = vehicles.filter(v => v.connection_status !== "active");
+    const offlineProlonged = offline.filter(v => !v.last_update || (now - new Date(v.last_update).getTime()) > OFFLINE_PROLONGED_HOURS * 3600000);
+    const offlineRecent = offline.filter(v => !offlineProlonged.includes(v));
+    const offItem = (v) => ({
+      tid: v.tracker_id, label: v.label,
+      sub: `${plateOf(v.tracker_id) ? plateOf(v.tracker_id) + " · " : ""}${v.last_update ? `Dernier signal : ${v.last_update}` : "Jamais connecté"}`,
+    });
 
-    // Fuel (only if consumption rate configured — engine returns null otherwise)
-    const fuelL = vehicles.reduce((s, v) => v.fuel_used_liters !== null && v.fuel_used_liters !== undefined ? s + v.fuel_used_liters : s, 0);
-    const fuelCHF = vehicles.reduce((s, v) => v.fuel_cost_chf !== null && v.fuel_cost_chf !== undefined ? s + v.fuel_cost_chf : s, 0);
-    const fuelAvailable = vehicles.some(v => v.fuel_cost_chf !== null && v.fuel_cost_chf !== undefined);
-
-    // Daily distance per category (from real daily_breakdown)
-    const dailyMap = {};
-    effVehicles.forEach(v => {
-      (v.daily_breakdown || []).forEach(db => {
-        if (!dailyMap[db.date]) {
-          dailyMap[db.date] = { date: db.date, day: dayFR(db.date), total: 0, actifs: 0 };
-          CATEGORIES.forEach(c => { dailyMap[db.date][c.id] = 0; });
-        }
-        dailyMap[db.date][v.category] = Math.round((dailyMap[db.date][v.category] + db.km) * 10) / 10;
-        dailyMap[db.date].total = Math.round((dailyMap[db.date].total + db.km) * 10) / 10;
-        if (db.active) dailyMap[db.date].actifs += 1;
+    // Activité quotidienne (agrégation hebdo au-delà de 31 jours)
+    const dmap = {};
+    effVehicles.forEach(v => (v.daily_breakdown || []).forEach(db => {
+      if (!dmap[db.date]) dmap[db.date] = { date: db.date, km: 0, actifs: 0 };
+      dmap[db.date].km = Math.round((dmap[db.date].km + db.km) * 10) / 10;
+      if (db.active) dmap[db.date].actifs += 1;
+    }));
+    const daily = Object.values(dmap).sort((a, b) => a.date.localeCompare(b.date));
+    let chart = daily, granularity = "day";
+    if (daily.length > 31) {
+      granularity = "week";
+      const weeks = {};
+      daily.forEach(d => {
+        const dt = new Date(d.date + "T00:00:00");
+        const monday = new Date(dt); monday.setDate(dt.getDate() - ((dt.getDay() + 6) % 7));
+        const wk = fmtDate(monday);
+        if (!weeks[wk]) weeks[wk] = { date: wk, km: 0, actifsSum: 0, n: 0 };
+        weeks[wk].km += d.km; weeks[wk].actifsSum += d.actifs; weeks[wk].n += 1;
       });
-    });
-    const daily = Object.values(dailyMap).sort((a, b) => a.date.localeCompare(b.date));
+      chart = Object.values(weeks).sort((a, b) => a.date.localeCompare(b.date))
+        .map(w => ({ date: w.date, km: Math.round(w.km * 10) / 10, actifs: Math.round((w.actifsSum / w.n) * 10) / 10 }));
+    }
 
-    const topByKm = [...effVehicles].sort((a, b) => b.period_mileage - a.period_mileage).slice(0, 5);
+    return { total, used, inactive, catCounts, catItems, totalKm, avgUtil, offline, offlineProlonged, offlineRecent, offItem, chart, granularity };
+  }, [effVehicles, effSummary, vehicles, capsRecs]);
 
-    return { total, used, inactive, catCounts, totalKm, kmPerUsed, offline, offline24h, strongUtil, lowUtil, fuelL, fuelCHF, fuelAvailable, daily, topByKm };
-  }, [effVehicles, effSummary, vehicles]);
+  // ═══ Énergie & consommation (capabilities réelles — jamais de 0 fabriqué) ═══
+  const energy = useMemo(() => {
+    const mix = { thermique: [], electrique: [], hybride: [], inconnu: [] };
+    const fuelLow = [], battLow = [], telemetry = [];
+    const socs = [], kwhs = [];
+    for (const v of vehicles) {
+      const c = capsRecs[String(v.tracker_id)];
+      const plate = c?.reg_number ? `${c.reg_number} · ` : "";
+      const item = { tid: v.tracker_id, label: v.label, sub: c?.reg_number || undefined };
+      mix[energyOf(c?.motorisation)].push(item);
+      const fl = c?.capabilities?.fuel_level;
+      const soc = c?.capabilities?.ev_soc;
+      const hasFuel = fl?.available && typeof fl.value === "number";
+      const hasSoc = soc?.available && typeof soc.value === "number";
+      if (hasFuel || hasSoc) {
+        // 1 véhicule = 1 entrée télémétrie (jamais compté deux fois même avec carburant ET batterie)
+        const parts = [];
+        if (hasFuel) parts.push(`${Math.round(fl.value)} %`);
+        if (hasSoc) parts.push(`⚡ ${Math.round(soc.value)} %`);
+        const descr = [hasFuel ? `Niveau carburant${fl.status === "STALE" ? ` · donnée ancienne (${fl.update_time})` : ""}` : null,
+                       hasSoc ? "Batterie de traction" : null].filter(Boolean).join(" · ");
+        telemetry.push({ ...item, value: parts.join(" · "), sub: `${plate}${descr}` });
+      }
+      if (hasFuel) {
+        if (fl.value < threshold)
+          fuelLow.push({ ...item, value: `${Math.round(fl.value)} %`, valueCls: "text-red-600", sub: `${plate}${fl.status === "STALE" ? `Donnée ancienne (${fl.update_time})` : `MAJ ${fl.update_time}`}` });
+      }
+      if (hasSoc) {
+        socs.push(soc.value);
+        // Règle 2b : alerte EV uniquement sur donnée réelle ET récente (status AVAILABLE) — jamais critique
+        if (soc.status === "AVAILABLE" && soc.value < threshold)
+          battLow.push({ ...item, value: `⚡ ${Math.round(soc.value)} %`, valueCls: "text-red-600", sub: `${plate}Batterie de traction · MAJ ${soc.update_time}` });
+      }
+      const kwh = c?.capabilities?.ev_kwh_per_100km;
+      if (kwh?.available && typeof kwh.value === "number") kwhs.push(kwh.value);
+    }
+    // Consommation ESTIMÉE (décision 3a) : taux configuré × km — obd_consumption exclu (unité non confirmée)
+    const fuelEstVehicles = vehicles.filter(v => v.fuel_used_liters !== null && v.fuel_used_liters !== undefined);
+    const estLiters = Math.round(fuelEstVehicles.reduce((s, v) => s + v.fuel_used_liters, 0) * 10) / 10;
+    const estKm = fuelEstVehicles.reduce((s, v) => s + (v.mileage || 0), 0);
+    const estL100 = estKm > 0 ? Math.round((estLiters / estKm) * 1000) / 10 : null;
+    const evKnownNoTelemetry = (mix.electrique.length + mix.hybride.length) > 0 && socs.length === 0;
+    return { mix, fuelLow, battLow, telemetry, socs, kwhs, fuelEstVehicles, estLiters, estL100, evKnownNoTelemetry };
+  }, [vehicles, capsRecs, threshold]);
 
-  // ---- Deterministic anomalies (documented rules, real data only) ----
-  const anomalies = useMemo(() => {
+  // ═══ Maintenance & conformité — uniquement dates réelles des fiches vehicle_admin (décision 4a : docs manquants omis) ═══
+  const maint = useMemo(() => {
+    const all = [];
+    for (const [tid, rec] of Object.entries(adminRecs)) {
+      const label = vehicles.find(v => String(v.tracker_id) === tid)?.label || `Véhicule ${tid}`;
+      const plate = plateOf(tid);
+      const push = (what, ds, kind, criticalWhenOverdue) => {
+        const d = daysTo(ds);
+        if (d === null || d > 30) return;
+        all.push({
+          tid: Number(tid), label, kind, criticalWhenOverdue, d, date: ds,
+          sub: `${plate ? plate + " · " : ""}${what} · ${ds}`, what,
+          value: d < 0 ? `échu (${Math.abs(d)} j)` : d === 0 ? "aujourd'hui" : `J-${d}`,
+          valueCls: d < 0 ? "text-red-600" : "text-amber-600",
+        });
+      };
+      push("Fin de leasing", rec.leasing?.date_fin, "leasing", false);
+      push("Fin d'assurance", rec.assurance?.date_fin, "assurance", true);
+      (rec.controles || []).filter(ct => ct.due_date && !ct.done_date).forEach(ct => push(`Contrôle : ${ct.label}`, ct.due_date, "controle", true));
+      push("Prochaine maintenance", rec.general?.prochaine_maintenance, "maintenance", false);
+      push("Prochaine expertise", rec.general?.prochaine_expertise, "expertise", false);
+    }
+    all.sort((a, b) => a.d - b.d);
+    const overdue = all.filter(x => x.d < 0);
+    const upcoming = all.filter(x => x.d >= 0);
+    // Règle 2b : CRITIQUE = assurance/contrôle DÉJÀ échu uniquement
+    const overdueCritical = overdue.filter(x => x.criticalWhenOverdue);
+    const overdueWatch = overdue.filter(x => !x.criticalWhenOverdue);
+    const assurances = all.filter(x => x.kind === "assurance");
+    const controles = all.filter(x => x.kind === "controle");
+    return { all, overdue, upcoming, overdueCritical, overdueWatch, assurances, controles };
+  }, [adminRecs, vehicles, capsRecs]);
+
+  // ═══ Alertes critiques (règle 2b) — assurance/contrôle échu + hors ligne prolongé/jamais connecté ═══
+  const critical = useMemo(() => {
+    const items = [
+      ...maint.overdueCritical.map(x => ({ tid: x.tid, label: x.label, sub: x.sub, value: x.value, valueCls: "text-red-600" })),
+      ...m.offlineProlonged.map(v => ({ ...m.offItem(v), value: v.last_update ? `> ${OFFLINE_PROLONGED_HOURS} h` : "jamais connecté", valueCls: "text-red-600" })),
+    ];
+    return items;
+  }, [maint.overdueCritical, m]);
+
+  // ═══ Priorités du jour (rouge = critique, orange = à surveiller) — max 7 ═══
+  const priorities = useMemo(() => {
     const list = [];
-    if (m.inactive.length > 0) list.push({
-      id: "inactive", sev: "red",
-      title: `${m.inactive.length} vehicule${m.inactive.length > 1 ? "s" : ""} sans activite sur la periode`,
-      detail: m.inactive.slice(0, 3).map(v => v.label).join(", ") + (m.inactive.length > 3 ? "…" : ""),
-      nav: "analyse",
+    if (maint.overdueCritical.length) list.push({
+      id: "overdue", sev: "red", count: maint.overdueCritical.length,
+      title: `Assurance / contrôle échu${maint.overdueCritical.length > 1 ? "s" : ""}`,
+      onClick: () => open("Assurances & contrôles échus", maint.overdueCritical),
     });
-    if (m.offline.length > 0) list.push({
-      id: "offline", sev: "red",
-      title: `${m.offline.length} vehicule${m.offline.length > 1 ? "s" : ""} hors ligne`,
-      detail: m.offline24h.length > 0 ? `dont ${m.offline24h.length} depuis plus de 24 h` : "Perte de signal GPS",
-      nav: "vehicles",
+    if (m.offlineProlonged.length) list.push({
+      id: "offline-long", sev: "red", count: m.offlineProlonged.length,
+      title: `Hors ligne depuis plus de ${OFFLINE_PROLONGED_HOURS} h`,
+      onClick: () => open(`Hors ligne prolongé (> ${OFFLINE_PROLONGED_HOURS} h)`, m.offlineProlonged.map(v => ({ ...m.offItem(v), value: v.last_update ? `> ${OFFLINE_PROLONGED_HOURS} h` : "jamais connecté", valueCls: "text-red-600" }))),
     });
-    if (m.lowUtil.length > 0) list.push({
-      id: "lowutil", sev: "amber",
-      title: `${m.lowUtil.length} vehicule${m.lowUtil.length > 1 ? "s" : ""} sous-utilise${m.lowUtil.length > 1 ? "s" : ""} (< 30%)`,
-      detail: m.lowUtil.slice(0, 3).map(v => v.label).join(", "),
-      nav: "analyse",
+    if (m.offlineRecent.length) list.push({
+      id: "offline-recent", sev: "amber", count: m.offlineRecent.length,
+      title: "Hors ligne récent",
+      onClick: () => open("Hors ligne récent (< 48 h)", m.offlineRecent.map(m.offItem)),
     });
-    if (m.strongUtil.length > 0) list.push({
-      id: "strong", sev: "blue",
-      title: `${m.strongUtil.length} vehicule${m.strongUtil.length > 1 ? "s" : ""} en forte utilisation (≥ 85%)`,
-      detail: m.strongUtil.slice(0, 3).map(v => v.label).join(", "),
-      nav: "analyse",
+    if (energy.fuelLow.length) list.push({
+      id: "fuel-low", sev: "amber", count: energy.fuelLow.length,
+      title: `Carburant faible (< ${threshold} %)`,
+      onClick: () => open(`Carburant faible (< ${threshold} %)`, energy.fuelLow),
     });
-    const lowEco = (eco.data?.drivers || []).filter(d => d.score && d.score.stars <= 2);
-    if (lowEco.length > 0) list.push({
-      id: "loweco", sev: "red",
-      title: `${lowEco.length} conducteur${lowEco.length > 1 ? "s" : ""} avec notation eco faible (≤ 2 etoiles LOGITRAK)`,
-      detail: lowEco.map(d => d.driver_name).join(", "),
-      nav: "drivers",
+    if (energy.battLow.length) list.push({
+      id: "batt-low", sev: "amber", count: energy.battLow.length,
+      title: `Batterie EV faible (< ${threshold} %)`,
+      onClick: () => open(`Batterie EV faible (< ${threshold} %)`, energy.battLow),
     });
-    return list;
-  }, [m, eco.data]);
+    const upcomingAndWatch = [...maint.upcoming, ...maint.overdueWatch];
+    if (upcomingAndWatch.length) list.push({
+      id: "deadlines", sev: "amber", count: upcomingAndWatch.length,
+      title: "Échéances ≤ 30 j (leasing · assurance · contrôles)",
+      onClick: () => open("Échéances ≤ 30 jours", upcomingAndWatch),
+    });
+    if (m.catCounts.sous_utilise) list.push({
+      id: "underused", sev: "amber", count: m.catCounts.sous_utilise,
+      title: "Sous-utilisés (< 30 %)",
+      onClick: () => open("Véhicules sous-utilisés (< 30 %)", m.catItems.sous_utilise),
+    });
+    if (m.catCounts.tres_utilise) list.push({
+      id: "highuse", sev: "amber", count: m.catCounts.tres_utilise,
+      title: "Forte utilisation (≥ 85 %)",
+      onClick: () => open("Forte utilisation (≥ 85 %)", m.catItems.tres_utilise),
+    });
+    return [...list.filter(x => x.sev === "red"), ...list.filter(x => x.sev === "amber")].slice(0, 7);
+  }, [maint, m, energy, threshold]);
 
+  // Actions recommandées déterministes (complément des priorités — max 3)
   const actions = useMemo(() => {
     const list = [];
-    if (m.inactive.length > 0) list.push({ t: `Evaluer la reaffectation des ${m.inactive.length} vehicules sans activite`, nav: "analyse" });
-    if (m.offline.length > 0) list.push({ t: `Verifier alimentation et connectivite des ${m.offline.length} trackers hors ligne`, nav: "vehicles" });
-    if (m.lowUtil.length > 0) list.push({ t: `Analyser le besoin reel des vehicules sous-utilises (${m.lowUtil.length})`, nav: "analyse" });
-    const lowEco = (eco.data?.drivers || []).filter(d => d.score && d.score.stars <= 2);
-    if (lowEco.length > 0) list.push({ t: `Revoir la conduite de ${lowEco.map(d => d.driver_name).join(", ")} (score eco faible)`, nav: "drivers" });
-    if (list.length === 0) list.push({ t: "Aucune action requise — flotte conforme aux seuils", nav: null });
-    return list;
-  }, [m, eco.data]);
+    if (maint.overdueCritical.length) list.push({ t: "Régulariser immédiatement les documents échus", f: () => open("Assurances & contrôles échus", maint.overdueCritical) });
+    if (m.offlineProlonged.length) list.push({ t: `Vérifier alimentation et connectivité des ${m.offlineProlonged.length} trackers hors ligne prolongé`, f: () => open(`Hors ligne prolongé (> ${OFFLINE_PROLONGED_HOURS} h)`, m.offlineProlonged.map(m.offItem)) });
+    if (m.catCounts.tres_utilise > 0 && m.catCounts.sous_utilise > 0) list.push({ t: "Rééquilibrer la charge entre véhicules en forte utilisation et sous-utilisés", f: () => onNavigate?.("analyse") });
+    if (m.inactive.length) list.push({ t: `Évaluer la réaffectation des ${m.inactive.length} véhicules sans activité`, f: () => open("Sans activité sur la période", m.catItems.inactif) });
+    if (!list.length) list.push({ t: "Aucune action requise — flotte conforme aux seuils", f: null });
+    return list.slice(0, 3);
+  }, [maint, m, onNavigate]);
 
-  const ecoDrivers = (eco.data?.drivers || []).filter(d => d.score).sort((a, b) => b.score.raw - a.score.raw).slice(0, 5);
+  // ═══ Véhicules à surveiller (5 max — 1 véhicule = son alerte principale) ═══
+  const watchList = useMemo(() => {
+    const byTid = {};
+    const add = (tid, label, prio, alert, alertCls) => {
+      if (!byTid[tid] || byTid[tid].prio < prio) byTid[tid] = { tid, label, prio, alert, alertCls };
+    };
+    maint.overdueCritical.forEach(x => add(x.tid, x.label, 100, `${x.what} — ${x.value}`, "text-red-600"));
+    m.offlineProlonged.forEach(v => add(v.tracker_id, v.label, 90, v.last_update ? `Hors ligne > ${OFFLINE_PROLONGED_HOURS} h` : "Jamais connecté", "text-red-600"));
+    m.offlineRecent.forEach(v => add(v.tracker_id, v.label, 70, "Hors ligne récent", "text-amber-600"));
+    energy.fuelLow.forEach(x => add(x.tid, x.label, 60, `Carburant ${x.value}`, "text-amber-600"));
+    energy.battLow.forEach(x => add(x.tid, x.label, 60, `Batterie ${x.value}`, "text-amber-600"));
+    maint.overdueWatch.forEach(x => add(x.tid, x.label, 55, `${x.what} — ${x.value}`, "text-amber-600"));
+    (effVehicles || []).filter(v => v.category === "sous_utilise").forEach(v => add(v.tracker_id, v.label, 40, `Sous-utilisé (${v.utilization_pct} %)`, "text-amber-600"));
+    (effVehicles || []).filter(v => v.category === "tres_utilise").forEach(v => add(v.tracker_id, v.label, 30, `Forte utilisation (${v.utilization_pct} %)`, "text-blue-600"));
+    const statusByTid = Object.fromEntries(vehicles.map(v => [v.tracker_id, v.connection_status === "active"]));
+    return Object.values(byTid).sort((a, b) => b.prio - a.prio).slice(0, 5)
+      .map(x => ({ ...x, online: statusByTid[x.tid] }));
+  }, [maint, m, energy, effVehicles, vehicles]);
+
+  // Éco-conduite compacte
+  const ecoLine = useMemo(() => {
+    if (eco.loading) return { loading: true };
+    const scored = (eco.data?.drivers || []).filter(d => d.score);
+    if (!scored.length) return { none: true };
+    const avg = Math.round(scored.reduce((s, d) => s + d.score.raw, 0) / scored.length);
+    const toWatch = scored.filter(d => d.score.stars <= 2);
+    return { avg, n: scored.length, toWatch };
+  }, [eco]);
 
   const usedPct = m.total > 0 ? Math.round((m.used.length / m.total) * 1000) / 10 : 0;
   const inactivePct = m.total > 0 ? Math.round((m.inactive.length / m.total) * 1000) / 10 : 0;
+  const totalEnergy = Object.values(energy.mix).reduce((s, a) => s + a.length, 0);
+  const avgSoc = energy.socs.length ? Math.round(energy.socs.reduce((s, x) => s + x, 0) / energy.socs.length) : null;
+  const avgKwh = energy.kwhs.length ? (energy.kwhs.reduce((s, x) => s + x, 0) / energy.kwhs.length).toFixed(1) : null;
 
-  const donutData = CATEGORIES.map(c => ({ name: c.label, value: m.catCounts[c.id] || 0, color: c.color })).filter(d => d.value > 0);
-
-  const sevCls = { red: "bg-red-50 border-red-100 text-red-600", amber: "bg-amber-50 border-amber-100 text-amber-700", blue: "bg-blue-50 border-blue-100 text-blue-700" };
+  const usedItems = m.used.map(v => ({ tid: v.tracker_id, label: v.label, value: `${v.utilization_pct} %`, sub: `${plateOf(v.tracker_id) ? plateOf(v.tracker_id) + " · " : ""}${v.active_days}/${v.total_days} jours actifs · ${v.period_mileage} km` }));
 
   return (
     <div className="p-4 lg:p-8 space-y-5 max-w-[1600px] mx-auto" data-testid="overview-tab">
 
-      {/* ═══ ROW 1 — KPI band ═══ */}
+      {/* ═══ LIGNE 1 — 6 KPI ═══ */}
       <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-4">
-        {/* Card 1 — fleet summary + sparkline */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 relative overflow-hidden col-span-2 md:col-span-1" data-testid="kpi-fleet-summary">
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">{m.total} vehicules</div>
-          <div className="mt-2 space-y-1 relative z-10">
-            <div className="flex items-center gap-1.5 text-[11px]">
-              <span className="w-2 h-2 rounded-full bg-emerald-500" />
-              <span className="text-gray-600">Flotte active ({usedPct}%) :</span>
-              <span className="font-semibold" style={{ fontFamily: "Outfit, sans-serif" }}>{m.used.length}/{m.total}</span>
-              {pm && <Delta curr={m.used.length} prev={pm.used} goodWhenUp={true} prevPeriod={prevPeriod} testId="delta-active" />}
-            </div>
-            <div className="flex items-center gap-1.5 text-[11px]">
-              <span className="w-2 h-2 rounded-full bg-gray-300" />
-              <span className="text-gray-600">Sans activite ({inactivePct}%) :</span>
-              <span className="font-semibold" style={{ fontFamily: "Outfit, sans-serif" }}>{m.inactive.length}/{m.total}</span>
-            </div>
-            {m.offline.length > 0 && (
-              <div className="flex items-center gap-1 text-[10px] text-red-500 font-medium pt-1">
-                <AlertTriangle size={11} /> {m.offline.length} hors ligne
-              </div>
-            )}
+        <button onClick={() => m.used.length && open("Véhicules actifs sur la période", usedItems)}
+          className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 text-left hover:shadow-md transition-shadow" data-testid="kpi-active">
+          <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400"><Truck size={11} className="text-emerald-500" />Véhicules actifs</div>
+          <div className="flex items-center gap-1.5 mt-1.5">
+            <span className="text-2xl font-semibold" style={{ fontFamily: "Outfit, sans-serif" }}>{m.used.length}<span className="text-sm text-gray-400 font-normal">/{m.total}</span></span>
+            <Delta curr={m.used.length} prev={pm?.used} goodWhenUp={true} prevPeriod={prevPeriod} testId="delta-active" state={prevEff.state} />
           </div>
-          {m.daily.length > 1 && (
-            <div className="absolute bottom-0 left-0 right-0 h-10 opacity-40">
-              <ResponsiveContainer width="100%" height={40}>
-                <AreaChart data={m.daily}><Area type="monotone" dataKey="total" stroke="#10B981" fill="#10B981" fillOpacity={0.25} strokeWidth={1.5} /></AreaChart>
-              </ResponsiveContainer>
-            </div>
-          )}
+          <div className="text-[10px] text-gray-400 mt-0.5">{usedPct}% du parc · sur la période</div>
+        </button>
+
+        <button onClick={() => m.offline.length && open("Véhicules hors ligne", m.offline.map(m.offItem))}
+          className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 text-left hover:shadow-md transition-shadow" data-testid="kpi-offline">
+          <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400"><WifiOff size={11} className="text-red-400" />Hors ligne</div>
+          <div className={`text-2xl font-semibold mt-1.5 ${m.offline.length ? "text-gray-900" : "text-gray-300"}`} style={{ fontFamily: "Outfit, sans-serif" }}>{m.offline.length}</div>
+          <div className="text-[10px] text-gray-400 mt-0.5">instantané{m.offlineProlonged.length ? <span className="text-red-500 font-medium"> · dont {m.offlineProlonged.length} &gt; {OFFLINE_PROLONGED_HOURS} h</span> : ""}</div>
+        </button>
+
+        <button onClick={() => m.inactive.length && open("Sans activité sur la période", m.catItems.inactif)}
+          className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 text-left hover:shadow-md transition-shadow" data-testid="kpi-inactive">
+          <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400"><Activity size={11} className="text-gray-400" />Sans activité</div>
+          <div className="flex items-center gap-1.5 mt-1.5">
+            <span className={`text-2xl font-semibold ${m.inactive.length ? "text-gray-900" : "text-gray-300"}`} style={{ fontFamily: "Outfit, sans-serif" }}>{m.inactive.length}</span>
+            <Delta curr={m.inactive.length} prev={pm?.inactive} goodWhenUp={false} prevPeriod={prevPeriod} testId="delta-inactive" state={prevEff.state} />
+          </div>
+          <div className="text-[10px] text-gray-400 mt-0.5">{inactivePct}% du parc · 0 km sur la période</div>
+        </button>
+
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4" data-testid="kpi-utilization">
+          <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400"><Gauge size={11} className="text-blue-400" />Utilisation flotte</div>
+          <div className="flex items-center gap-1.5 mt-1.5">
+            <span className="text-2xl font-semibold" style={{ fontFamily: "Outfit, sans-serif" }}>{m.avgUtil !== null ? `${m.avgUtil}%` : "—"}</span>
+            <Delta curr={m.avgUtil ?? 0} prev={pm?.avgUtil} unit=" pts" goodWhenUp={true} prevPeriod={prevPeriod} testId="delta-utilization" state={prevEff.state} />
+          </div>
+          <div className="text-[10px] text-gray-400 mt-0.5">moyenne jours actifs / jours période</div>
         </div>
 
-        {/* Cards 2-5 — category donuts */}
-        {["sous_utilise", "modere", "bonne", "tres_utilise"].map(cid => {
-          const c = CAT_MAP[cid];
-          const count = m.catCounts[cid] || 0;
-          const pct = m.total > 0 ? (count / m.total) * 100 : 0;
-          return (
-            <button key={cid} onClick={() => onNavigate?.("analyse")}
-              className="bg-white rounded-xl border border-gray-200 shadow-sm p-4 text-left hover:shadow-md transition-shadow"
-              data-testid={`kpi-cat-${cid}`}>
-              <div className={`text-[10px] font-semibold uppercase tracking-wider ${count > 0 ? c.text : "text-gray-400"}`}>
-                {c.label} ({Math.round(pct)}%)
-              </div>
-              <div className="flex items-center gap-3 mt-2">
-                <Donut pct={pct} color={count > 0 ? c.color : "#e5e7eb"} />
-                <div>
-                  <div className="flex items-center gap-1.5">
-                    <span className="text-2xl font-semibold" style={{ fontFamily: "Outfit, sans-serif" }}>{count}</span>
-                    {pm && <Delta curr={count} prev={pm.catCounts[cid]}
-                      goodWhenUp={cid === "sous_utilise" ? false : (cid === "bonne" || cid === "tres_utilise") ? true : undefined}
-                      prevPeriod={prevPeriod} testId={`delta-cat-${cid}`} />}
-                  </div>
-                  <div className="text-[10px] text-gray-400">vehicule{count > 1 ? "s" : ""} · {c.seuil}</div>
-                </div>
-              </div>
-            </button>
-          );
-        })}
-
-        {/* Card 6 — km / vehicule utilise */}
-        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4" data-testid="kpi-km-per-used">
-          <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400">Km moy. / utilise</div>
-          <div className="flex items-center gap-1.5 mt-1">
-            <span className="text-2xl font-semibold" style={{ fontFamily: "Outfit, sans-serif" }}>{m.kmPerUsed}</span>
-            {pm && <Delta curr={m.kmPerUsed} prev={pm.kmPerUsed} unit=" km" prevPeriod={prevPeriod} testId="delta-km-per-used" />}
+        <div className="bg-white rounded-xl border border-gray-200 shadow-sm p-4" data-testid="kpi-distance">
+          <div className="flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider text-gray-400"><Gauge size={11} className="text-gray-400" />Distance totale</div>
+          <div className="flex items-center gap-1.5 mt-1.5">
+            <span className="text-2xl font-semibold" style={{ fontFamily: "Outfit, sans-serif" }}>{Math.round(m.totalKm).toLocaleString("fr-FR")}<span className="text-sm text-gray-400 font-normal"> km</span></span>
           </div>
-          <div className="text-[10px] text-gray-400">{Math.round(m.totalKm)} km / {m.used.length} vehicule{m.used.length > 1 ? "s" : ""} utilise{m.used.length > 1 ? "s" : ""}
-            {pm && <> <Delta curr={Math.round(m.totalKm)} prev={pm.totalKm} unit=" km" prevPeriod={prevPeriod} testId="delta-total-km" /></>}
-          </div>
-          {m.daily.length > 1 && (
-            <div className="h-9 mt-1">
-              <ResponsiveContainer width="100%" height={36}>
-                <ComposedChart data={m.daily}><Bar dataKey="total" fill="#3B82F6" radius={[2, 2, 0, 0]} /></ComposedChart>
-              </ResponsiveContainer>
-            </div>
-          )}
+          <div className="text-[10px] text-gray-400 mt-0.5 flex items-center gap-1">sur la période <Delta curr={Math.round(m.totalKm)} prev={pm?.totalKm} unit=" km" prevPeriod={prevPeriod} testId="delta-distance" state={prevEff.state} /></div>
         </div>
+
+        <button onClick={() => critical.length && open("Alertes critiques", critical)}
+          className={`rounded-xl border shadow-sm p-4 text-left transition-shadow ${critical.length ? "bg-red-50 border-red-200 hover:shadow-md" : "bg-white border-gray-200"}`} data-testid="kpi-critical">
+          <div className={`flex items-center gap-1.5 text-[10px] font-semibold uppercase tracking-wider ${critical.length ? "text-red-600" : "text-gray-400"}`}><ShieldAlert size={11} />Alertes critiques</div>
+          <div className={`text-2xl font-semibold mt-1.5 ${critical.length ? "text-red-600" : "text-gray-300"}`} style={{ fontFamily: "Outfit, sans-serif" }}>{critical.length}</div>
+          <div className={`text-[10px] mt-0.5 ${critical.length ? "text-red-500" : "text-gray-400"}`}>échéances échues · hors ligne prolongé</div>
+        </button>
       </div>
 
-      {/* ═══ ROW 2 — repartition / statut & finance / activite quotidienne ═══ */}
-      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        {/* Repartition */}
-        <Panel title="Repartition des vehicules" testId="panel-repartition" className="lg:col-span-3">
-          <div className="w-full h-4 rounded-full overflow-hidden flex mb-4">
-            {CATEGORIES.map(c => {
+      {/* ═══ LIGNE 2 — Utilisation flotte (4 catégories) | Activité quotidienne ═══ */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <Panel title="Utilisation de la flotte" testId="panel-utilization">
+          <div className="w-full h-5 rounded-full overflow-hidden flex mb-4 bg-gray-100">
+            {DISPLAY_CATEGORIES.map(c => {
               const count = m.catCounts[c.id] || 0;
               if (count === 0) return null;
-              return <div key={c.id} style={{ width: `${(count / Math.max(1, m.total)) * 100}%`, background: c.color }}
-                className="h-full first:rounded-l-full last:rounded-r-full" title={`${c.label} : ${count}`} />;
+              return <div key={c.id} onClick={() => open(`${c.label} (${c.seuil})`, m.catItems[c.id])}
+                style={{ width: `${(count / Math.max(1, m.total)) * 100}%`, background: c.color }}
+                className="h-full cursor-pointer hover:opacity-80 transition-opacity flex items-center justify-center text-white text-[10px] font-bold"
+                title={`${c.label} : ${count}`} data-testid={`util-bar-${c.id}`}>{count}</div>;
             })}
           </div>
-          <div className="space-y-2">
-            {CATEGORIES.map(c => (
-              <div key={c.id} className="flex items-center justify-between text-[11px]">
-                <div className="flex items-center gap-2">
-                  <span className="w-2.5 h-2.5 rounded-sm" style={{ background: c.color }} />
-                  <span className="text-gray-600">{c.label}</span>
-                  <span className="text-gray-300">{c.seuil}</span>
-                </div>
-                <span className="font-semibold" style={{ fontFamily: "Outfit, sans-serif" }}>{m.catCounts[c.id] || 0}</span>
-              </div>
-            ))}
+          <div className="space-y-1.5">
+            {DISPLAY_CATEGORIES.map(c => {
+              const n = m.catCounts[c.id] || 0;
+              const pct = m.total > 0 ? Math.round((n / m.total) * 100) : 0;
+              return (
+                <button key={c.id} onClick={() => n > 0 && open(`${c.label} (${c.seuil})`, m.catItems[c.id])}
+                  className={`w-full flex items-center justify-between text-[11px] px-2 py-1.5 rounded-lg transition-colors ${n > 0 ? "hover:bg-gray-50 cursor-pointer" : "opacity-40 cursor-default"}`}
+                  data-testid={`util-cat-${c.id}`}>
+                  <span className="flex items-center gap-2">
+                    <span className="w-2.5 h-2.5 rounded-sm" style={{ background: c.color }} />
+                    <span className="text-gray-600">{c.label}</span>
+                    <span className="text-gray-300">{c.seuil}</span>
+                  </span>
+                  <span className="font-semibold tabular-nums" style={{ fontFamily: "Outfit, sans-serif" }}>{n} ({pct}%)</span>
+                </button>
+              );
+            })}
           </div>
+          <div className="text-[9px] text-gray-400 mt-3">Somme des 4 catégories = {m.total} véhicules · seuils backend inchangés (utilisation normale = modéré 30–59% + bonne 60–84%) · clic = liste des véhicules</div>
         </Panel>
 
-        {/* Statut & impact financier */}
-        <Panel title="Statut & impact financier" testId="panel-finance" className="lg:col-span-3">
-          <div className="flex items-center justify-center">
-            <div className="relative">
-              <PieChart width={150} height={150}>
-                <Pie data={donutData.length > 0 ? donutData : [{ name: "Aucune donnee", value: 1, color: "#f3f4f6" }]}
-                  dataKey="value" innerRadius={45} outerRadius={65} paddingAngle={2} startAngle={90} endAngle={-270}>
-                  {(donutData.length > 0 ? donutData : [{ color: "#f3f4f6" }]).map((d, i) => <Cell key={i} fill={d.color} stroke="none" />)}
-                </Pie>
-                <Tooltip contentStyle={{ borderRadius: 8, border: "1px solid #e5e7eb", fontSize: 11 }} />
-              </PieChart>
-              <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-                <span className="text-xl font-semibold" style={{ fontFamily: "Outfit, sans-serif" }}>{m.total}</span>
-                <span className="text-[9px] text-gray-400 uppercase">vehicules</span>
+        <Panel title={`Activité ${m.granularity === "week" ? "hebdomadaire" : "quotidienne"}`} testId="panel-daily-activity">
+          {m.chart.length > 0 ? (
+            <>
+              <ResponsiveContainer width="100%" height={230}>
+                <ComposedChart data={m.chart} barSize={m.granularity === "week" ? 28 : 22}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
+                  <XAxis dataKey="date" tickFormatter={(v) => m.granularity === "week" ? `${new Date(v + "T00:00:00").getDate()}/${new Date(v + "T00:00:00").getMonth() + 1}` : dayFR(v)} tick={{ fontSize: 10, fill: "#5E5E62" }} axisLine={false} tickLine={false} />
+                  <YAxis yAxisId="a" tick={{ fontSize: 10, fill: "#8A8A8E" }} axisLine={false} tickLine={false} width={30} allowDecimals={false} />
+                  <YAxis yAxisId="k" orientation="right" tick={{ fontSize: 10, fill: "#8A8A8E" }} axisLine={false} tickLine={false} width={45} unit=" km" />
+                  <Tooltip contentStyle={{ borderRadius: 8, border: "1px solid #e5e7eb", fontSize: 11 }}
+                    formatter={(val, name) => name === "Véhicules actifs" ? [`${val} véhicule${val > 1 ? "s" : ""}`, name] : [`${Math.round(val)} km`, name]}
+                    labelFormatter={(v) => m.granularity === "week" ? `Semaine du ${new Date(v + "T00:00:00").toLocaleDateString("fr-FR")}` : `${dayFR(v)} ${new Date(v + "T00:00:00").toLocaleDateString("fr-FR")}`} />
+                  <Bar yAxisId="a" dataKey="actifs" name="Véhicules actifs" fill="#10B981" radius={[3, 3, 0, 0]} fillOpacity={0.8} />
+                  <Line yAxisId="k" type="monotone" dataKey="km" name="Distance (km)" stroke="#111" strokeWidth={2} dot={{ r: 2.5 }} />
+                </ComposedChart>
+              </ResponsiveContainer>
+              <div className="text-[9px] text-gray-400 mt-1">
+                Barres : véhicules actifs (≥ {efficiency?.active_day_threshold_km || 1} km/jour) · Courbe : distance — Source : tracker/stats/mileage/read{m.granularity === "week" ? " · agrégé par semaine (moyenne véhicules actifs/jour, somme km)" : ""}
               </div>
-            </div>
-          </div>
-          <div className="mt-3 pt-3 border-t border-gray-100 space-y-1.5" data-testid="fuel-impact">
-            {m.fuelAvailable ? (
-              <>
-                <div className="flex items-center justify-between text-[11px]">
-                  <span className="flex items-center gap-1.5 text-gray-600"><Fuel size={12} className="text-gray-400" />Carburant estime</span>
-                  <span className="font-semibold" style={{ fontFamily: "Outfit, sans-serif" }}>{Math.round(m.fuelL * 10) / 10} L</span>
-                </div>
-                <div className="flex items-center justify-between text-[11px]">
-                  <span className="text-gray-600">Cout carburant (periode)</span>
-                  <span className="font-semibold text-red-500" style={{ fontFamily: "Outfit, sans-serif" }}>{Math.round(m.fuelCHF)} CHF</span>
-                </div>
-                <div className="text-[9px] text-gray-400">Base : km reels × taux de consommation configure</div>
-              </>
-            ) : (
-              <div className="text-[10px] text-gray-400">
-                Cout carburant indisponible — aucun taux de consommation configure. Aucune valeur estimee ne sera affichee.
-              </div>
-            )}
-          </div>
-        </Panel>
-
-        {/* Activite quotidienne */}
-        <Panel title="Activite quotidienne" testId="panel-daily-activity" className="lg:col-span-6">
-          {m.daily.length > 0 ? (
-            <ResponsiveContainer width="100%" height={240}>
-              <ComposedChart data={m.daily} barSize={22}>
-                <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" vertical={false} />
-                <XAxis dataKey="date" tickFormatter={(v) => dayFR(v)} tick={{ fontSize: 10, fill: "#5E5E62" }} axisLine={false} tickLine={false} />
-                <YAxis tick={{ fontSize: 10, fill: "#8A8A8E" }} axisLine={false} tickLine={false} width={40} unit=" km" />
-                <Tooltip contentStyle={{ borderRadius: 8, border: "1px solid #e5e7eb", fontSize: 11 }}
-                  labelFormatter={(v) => { const d = new Date(v + "T00:00:00"); return `${dayFR(v)} ${d.getDate()}/${d.getMonth() + 1} — km par categorie de vehicule`; }} />
-                <Legend wrapperStyle={{ fontSize: 10 }} />
-                {CATEGORIES.filter(c => c.id !== "inactif").map(c => (
-                  <Bar key={c.id} dataKey={c.id} name={c.label} stackId="km" fill={c.color} />
-                ))}
-                <Line type="monotone" dataKey="total" name="Total km/jour" stroke="#111" strokeWidth={2} dot={{ r: 3 }} />
-              </ComposedChart>
-            </ResponsiveContainer>
+            </>
           ) : (
-            <div className="h-[240px] flex items-center justify-center text-xs text-gray-400">Aucune donnee quotidienne sur la periode</div>
+            <div className="h-[230px] flex items-center justify-center text-xs text-gray-400">Aucune donnée quotidienne sur la période</div>
           )}
-          <div className="text-[9px] text-gray-400 mt-1">Barres : km/jour repartis selon la categorie d'utilisation du vehicule sur la periode — Source : tracker/stats/mileage/read</div>
         </Panel>
       </div>
 
-      {/* ═══ ROW 3 — énergie flotte / alertes / populations cliquables ═══ */}
-      <EnergySection data={data} onOpenVehicle={onOpenVehicle} />
-
-      {/* ═══ ROW 4 — anomalies / conducteurs eco / actions + snapshot ═══ */}
+      {/* ═══ LIGNE 3 — Énergie & consommation | Priorités du jour ═══ */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
-        {/* Anomalies */}
-        <Panel title="Anomalies & alertes" testId="panel-anomalies" className="lg:col-span-4">
-          {anomalies.length === 0 ? (
-            <div className="text-xs text-gray-400 py-6 text-center">Aucune anomalie detectee sur la periode</div>
-          ) : (
-            <div className="space-y-2">
-              {anomalies.map(a => (
-                <button key={a.id} onClick={() => a.nav && onNavigate?.(a.nav)}
-                  className={`w-full text-left p-3 rounded-lg border transition-colors hover:brightness-95 ${sevCls[a.sev]}`}
-                  data-testid={`anomaly-${a.id}`}>
-                  <div className="flex items-start gap-2">
-                    <AlertTriangle size={13} className="mt-0.5 shrink-0" />
-                    <div>
-                      <div className="text-[11px] font-semibold">{a.title}</div>
-                      <div className="text-[10px] opacity-70 mt-0.5">{a.detail}</div>
-                    </div>
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
-          <div className="text-[9px] text-gray-400 mt-3">Regles deterministes sur donnees LOGITRAK — aucun seuil arbitraire non documente</div>
-        </Panel>
-
-        {/* Conducteurs & score eco */}
-        <Panel title="Conducteurs & score eco" testId="panel-eco-drivers" className="lg:col-span-4"
-          action={<button onClick={() => onNavigate?.("drivers")} className="text-[10px] text-blue-600 hover:underline flex items-center gap-0.5" data-testid="link-drivers">Detail<ChevronRight size={11} /></button>}>
-          {eco.loading ? (
-            <div className="flex flex-col items-center justify-center py-8 gap-2">
-              <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-800 rounded-full animate-spin" />
-              <span className="text-[10px] text-gray-400">Rapport LOGITRAK « Qualite de conduite »…</span>
-            </div>
-          ) : ecoDrivers.length === 0 ? (
-            <div className="text-xs text-gray-400 py-6 text-center">Aucune donnee eco-conduite attribuable sur la periode</div>
-          ) : (
-            <div className="space-y-2">
-              {ecoDrivers.map((d, i) => (
-                <button key={d.employee_id} onClick={() => onNavigate?.("drivers")}
-                  className="w-full flex items-center gap-3 p-2.5 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors text-left"
-                  data-testid={`eco-driver-${d.employee_id}`}>
-                  <span className="text-[10px] font-semibold text-gray-400 w-3">{i + 1}</span>
-                  <span className="w-8 h-8 rounded-full bg-[#111] text-white flex items-center justify-center text-[10px] font-semibold shrink-0">{initials(d.driver_name)}</span>
-                  <div className="min-w-0 flex-1">
-                    <div className="text-xs font-medium text-gray-900 truncate">{d.driver_name}</div>
-                    <div className="text-[10px] text-gray-400">{Math.round(d.distance_km)} km · {d.trips_count} trajets</div>
-                  </div>
-                  <span className={`text-xs font-semibold ${starColorCls(d.score.stars)}`} style={{ fontFamily: "Outfit, sans-serif" }} title="Notation native LOGITRAK">{d.score.display}</span>
-                </button>
-              ))}
-            </div>
-          )}
-          <div className="text-[9px] text-gray-400 mt-3">Score natif LOGITRAK — Rapport « Qualite de conduite » (plugin 46)</div>
-        </Panel>
-
-        {/* Actions + snapshot */}
-        <div className="lg:col-span-4 space-y-4">
-          <Panel title="Actions recommandees" testId="panel-actions">
-            <div className="space-y-1.5">
-              {actions.map((a, i) => (
-                <button key={i} onClick={() => a.nav && onNavigate?.(a.nav)} disabled={!a.nav}
-                  className="w-full flex items-center justify-between gap-2 p-2.5 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors text-left disabled:hover:bg-gray-50"
-                  data-testid={`action-${i}`}>
-                  <span className="text-[11px] text-gray-700">{a.t}</span>
-                  {a.nav && <ChevronRight size={13} className="text-gray-300 shrink-0" />}
-                </button>
-              ))}
-            </div>
-          </Panel>
-
-          <Panel title="Vehicule snapshot" testId="panel-snapshot"
-            action={<button onClick={() => onNavigate?.("vehicles")} className="text-[10px] text-blue-600 hover:underline flex items-center gap-0.5" data-testid="link-vehicles">Tous<ChevronRight size={11} /></button>}>
-            <table className="w-full text-[11px]">
-              <thead>
-                <tr className="text-[9px] uppercase tracking-wider text-gray-400 border-b border-gray-100">
-                  <th className="text-left py-1.5">Vehicule</th>
-                  <th className="text-left py-1.5">Statut</th>
-                  <th className="text-right py-1.5">Km</th>
-                </tr>
-              </thead>
-              <tbody>
-                {m.topByKm.map(v => {
-                  const sv = vehicles.find(x => x.tracker_id === v.tracker_id);
-                  const online = sv?.connection_status === "active";
+        <Panel title="Énergie & consommation" testId="panel-energy" className="lg:col-span-8">
+          {!caps ? <div className="text-xs text-gray-400 py-6">Chargement des capacités…</div> :
+           caps.success === false ? <div className="text-xs text-gray-400 py-6">Capacités indisponibles pour le moment.</div> : (
+            <div className="space-y-4">
+              {/* Répartition motorisation */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {Object.entries(ENERGY_META).map(([k, meta]) => {
+                  const n = energy.mix[k].length;
+                  const pct = totalEnergy > 0 ? Math.round((n / totalEnergy) * 100) : 0;
                   return (
-                    <tr key={v.tracker_id} className="border-b border-gray-50" data-testid={`snapshot-${v.tracker_id}`}>
-                      <td className="py-2 font-medium text-gray-800 truncate max-w-[120px]" title={v.label}>{v.label}</td>
-                      <td className="py-2">
-                        <span className={`inline-flex items-center gap-1 ${online ? "text-emerald-600" : "text-gray-400"}`}>
-                          <span className={`w-1.5 h-1.5 rounded-full ${online ? "bg-emerald-500" : "bg-gray-300"}`} />
-                          {online ? "Actif" : "Hors ligne"}
-                        </span>
-                      </td>
-                      <td className="py-2 text-right font-semibold tabular-nums" style={{ fontFamily: "Outfit, sans-serif" }}>{Math.round(v.period_mileage)} km</td>
-                    </tr>
+                    <button key={k} onClick={() => n && open(`Énergie : ${meta.label}`, energy.mix[k])} disabled={!n}
+                      className={`rounded-lg border border-gray-100 bg-gray-50/60 p-3 text-left transition-colors ${n ? "hover:bg-gray-100 cursor-pointer" : "opacity-50 cursor-default"}`}
+                      data-testid={`energy-mix-${k}`}>
+                      <meta.icon size={13} className={meta.cls} />
+                      <div className="text-lg font-semibold mt-1" style={{ fontFamily: "Outfit, sans-serif" }}>{n} <span className="text-[10px] font-normal text-gray-400">({pct}%)</span></div>
+                      <div className="text-[10px] text-gray-500">{meta.label}</div>
+                    </button>
                   );
                 })}
-              </tbody>
-            </table>
+              </div>
+
+              {/* Consommation estimée (3a) + couverture télémétrie */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="rounded-lg border border-gray-100 p-3" data-testid="energy-estimated-consumption">
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Consommation estimée</div>
+                  {energy.fuelEstVehicles.length > 0 ? (
+                    <>
+                      <div className="text-lg font-semibold" style={{ fontFamily: "Outfit, sans-serif" }}>{energy.estLiters} L{energy.estL100 !== null && <span className="text-xs font-normal text-gray-500"> · ≈ {energy.estL100} L/100 km</span>}</div>
+                      <div className="text-[9px] text-gray-400 mt-1">Estimation : taux configuré × km réels — basé sur {energy.fuelEstVehicles.length}/{m.total} véhicules (EV exclus). Aucune mesure embarquée utilisée.</div>
+                    </>
+                  ) : (
+                    <div className="text-[10px] text-gray-400">Aucun taux de consommation configuré — aucune estimation affichée.</div>
+                  )}
+                </div>
+                <button onClick={() => energy.telemetry.length && open("Télémétrie énergie disponible", energy.telemetry)} disabled={!energy.telemetry.length}
+                  className={`rounded-lg border border-gray-100 p-3 text-left ${energy.telemetry.length ? "hover:bg-gray-50 cursor-pointer" : "cursor-default"}`}
+                  data-testid="energy-telemetry-coverage">
+                  <div className="text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-1">Couverture télémétrie énergie</div>
+                  <div className="text-lg font-semibold" style={{ fontFamily: "Outfit, sans-serif" }}>{energy.telemetry.length}<span className="text-sm text-gray-400 font-normal">/{m.total}</span></div>
+                  <div className="text-[9px] text-gray-400 mt-1">véhicules avec niveau carburant ou batterie réellement mesuré (capteur obd_fuel / SoC)</div>
+                </button>
+              </div>
+
+              {/* EV : chips uniquement si télémétrie réelle (5a — masqué en production sans données) */}
+              {avgSoc !== null && (
+                <div className="flex flex-wrap gap-2 text-[11px]" data-testid="ev-summary">
+                  <span className="px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 font-medium">⚡ SoC moyen : {avgSoc} %</span>
+                  {avgKwh && <span className="px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700 font-medium">Conso moyenne : {avgKwh} kWh/100 km</span>}
+                  <span className="px-2 py-1 rounded-lg bg-emerald-50 text-emerald-700">{energy.socs.length} EV avec télémétrie batterie</span>
+                </div>
+              )}
+              {energy.evKnownNoTelemetry && (
+                <div className="text-[10px] text-gray-400" data-testid="ev-no-telemetry-note">
+                  Données batterie non disponibles sur les véhicules électriques/hybrides suivis.
+                </div>
+              )}
+              <p className="text-[9px] text-gray-400">Motorisation : garage + correction LOGITRAK — aucune classification automatique par nom. Donnée absente ≠ niveau faible, jamais de 0 fabriqué. obd_consumption exclu (unité non confirmée).</p>
+            </div>
+          )}
+        </Panel>
+
+        <div className="lg:col-span-4 space-y-4">
+          <Panel title="Priorités du jour" testId="panel-priorities">
+            {priorities.length === 0 ? (
+              <div className="text-xs text-gray-400 py-4 text-center" data-testid="priorities-empty">Aucune priorité — flotte conforme aux seuils</div>
+            ) : (
+              <div className="space-y-1.5">
+                {priorities.map(p => (
+                  <button key={p.id} onClick={p.onClick}
+                    className={`w-full flex items-center justify-between gap-2 px-3 py-2 rounded-lg text-xs transition-colors ${p.sev === "red" ? "bg-red-50 text-red-700 hover:bg-red-100" : "bg-amber-50 text-amber-700 hover:bg-amber-100"}`}
+                    data-testid={`priority-${p.id}`}>
+                    <span className="flex items-center gap-1.5 text-left"><span className={`w-1.5 h-1.5 rounded-full shrink-0 ${p.sev === "red" ? "bg-red-500" : "bg-amber-500"}`} />{p.title}</span>
+                    <span className="font-semibold shrink-0">{p.count}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+            <div className="mt-3 pt-3 border-t border-gray-100">
+              <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">Actions recommandées</div>
+              <div className="space-y-1">
+                {actions.map((a, i) => (
+                  <button key={i} onClick={a.f || undefined} disabled={!a.f}
+                    className="w-full flex items-center justify-between gap-2 px-2.5 py-2 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors text-left disabled:hover:bg-gray-50"
+                    data-testid={`action-${i}`}>
+                    <span className="text-[11px] text-gray-700">{a.t}</span>
+                    {a.f && <ChevronRight size={12} className="text-gray-300 shrink-0" />}
+                  </button>
+                ))}
+              </div>
+            </div>
+            <div className="text-[9px] text-gray-400 mt-2">Règles déterministes documentées — rouge = critique (règle 2b), orange = à surveiller</div>
           </Panel>
         </div>
       </div>
 
-      {/* ═══ Source footer ═══ */}
-      <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 rounded-xl border border-gray-200">
-        <div className="w-2 h-2 rounded-full bg-emerald-500" />
-        <span className="text-[10px] text-gray-500">Donnees 100% LOGITRAK — aucune estimation. Categories : sans activite 0% · sous-utilise &lt;30% · modere 30–59% · bonne 60–84% · forte ≥85% (jours actifs / jours periode).{pm ? ` Comparaison vs periode precedente : ${prevPeriod.from} au ${prevPeriod.to}.` : ""}</span>
-        <span className="text-[10px] text-gray-400 ml-auto">{fromDate} au {toDate}</span>
+      {/* ═══ LIGNE 4 — Maintenance & conformité | Véhicules à surveiller ═══ */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-4">
+        <Panel title="Maintenance & conformité" testId="panel-maintenance" className="lg:col-span-8">
+          {maint.all.length === 0 ? (
+            <div className="text-xs text-gray-400 py-4" data-testid="maintenance-empty">Aucune échéance à moins de 30 jours dans les fiches véhicules (leasing, assurance, contrôles, maintenance, expertise).</div>
+          ) : (
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                {[
+                  { id: "overdue", label: "Échues", items: maint.overdue, cls: maint.overdue.length ? "bg-red-50 border-red-100 text-red-700" : "bg-gray-50 border-gray-100 text-gray-400", icon: ShieldAlert },
+                  { id: "upcoming", label: "≤ 30 jours", items: maint.upcoming, cls: maint.upcoming.length ? "bg-amber-50 border-amber-100 text-amber-700" : "bg-gray-50 border-gray-100 text-gray-400", icon: CalendarClock },
+                  { id: "assurances", label: "Assurances", items: maint.assurances, cls: maint.assurances.length ? "bg-gray-50 border-gray-200 text-gray-700" : "bg-gray-50 border-gray-100 text-gray-400", icon: ShieldAlert },
+                  { id: "controles", label: "Contrôles", items: maint.controles, cls: maint.controles.length ? "bg-gray-50 border-gray-200 text-gray-700" : "bg-gray-50 border-gray-100 text-gray-400", icon: Wrench },
+                ].map(t => (
+                  <button key={t.id} onClick={() => t.items.length && open(`Maintenance & conformité : ${t.label}`, t.items)} disabled={!t.items.length}
+                    className={`rounded-lg border p-3 text-left transition-colors ${t.cls} ${t.items.length ? "hover:brightness-95 cursor-pointer" : "cursor-default"}`}
+                    data-testid={`maint-${t.id}`}>
+                    <t.icon size={12} />
+                    <div className="text-lg font-semibold mt-0.5" style={{ fontFamily: "Outfit, sans-serif" }}>{t.items.length}</div>
+                    <div className="text-[10px]">{t.label}</div>
+                  </button>
+                ))}
+              </div>
+              <div>
+                <div className="text-[9px] font-semibold uppercase tracking-wider text-gray-400 mb-1.5">Prochaines échéances</div>
+                {maint.all.slice(0, 5).map((x, i) => (
+                  <button key={i} onClick={() => onOpenVehicle?.(x.tid)}
+                    className="w-full flex items-center justify-between px-2.5 py-2 rounded-lg hover:bg-gray-50 text-left transition-colors"
+                    data-testid={`deadline-row-${i}`}>
+                    <div className="min-w-0">
+                      <div className="text-xs font-medium text-gray-900 truncate">{x.label}</div>
+                      <div className="text-[10px] text-gray-400">{x.what} · {x.date}</div>
+                    </div>
+                    <span className={`text-[10px] font-semibold shrink-0 ${x.valueCls}`}>{x.value}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+          <div className="text-[9px] text-gray-400 mt-3">Source : fiches véhicules LOGITRAK (dates saisies) — aucune règle de document obligatoire appliquée cette itération</div>
+        </Panel>
+
+        <Panel title="Véhicules à surveiller" testId="panel-watch" className="lg:col-span-4">
+          {watchList.length === 0 ? (
+            <div className="text-xs text-gray-400 py-4 text-center" data-testid="watch-empty">Aucun véhicule à surveiller</div>
+          ) : (
+            <div className="space-y-1.5">
+              {watchList.map(x => (
+                <button key={x.tid} onClick={() => onOpenVehicle?.(x.tid)}
+                  className="w-full flex items-center gap-2.5 px-2.5 py-2 rounded-lg hover:bg-gray-50 text-left transition-colors"
+                  data-testid={`watch-vehicle-${x.tid}`}>
+                  <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${x.online ? "bg-emerald-500" : "bg-gray-300"}`} title={x.online ? "En ligne" : "Hors ligne"} />
+                  <div className="min-w-0 flex-1">
+                    <div className="text-xs font-medium text-gray-900 truncate">{x.label}</div>
+                    <div className={`text-[10px] ${x.alertCls}`}>{x.alert}</div>
+                  </div>
+                  <ChevronRight size={13} className="text-gray-300 shrink-0" />
+                </button>
+              ))}
+            </div>
+          )}
+          <div className="text-[9px] text-gray-400 mt-3">5 max — alerte principale par véhicule · clic = fiche véhicule</div>
+        </Panel>
       </div>
+
+      {/* ═══ Éco-conduite — ligne compacte ═══ */}
+      <div className="flex items-center gap-3 px-4 py-3 bg-white rounded-xl border border-gray-200" data-testid="eco-line">
+        <Leaf size={14} className="text-emerald-500 shrink-0" />
+        {ecoLine.loading ? (
+          <span className="text-[11px] text-gray-400">Éco-conduite : calcul du rapport LOGITRAK en cours…</span>
+        ) : ecoLine.none ? (
+          <span className="text-[11px] text-gray-400">Éco-conduite : aucune donnée attribuable sur la période (rapport « Qualité de conduite »)</span>
+        ) : (
+          <span className="text-[11px] text-gray-700">
+            Éco-conduite : score moyen <strong>{ecoLine.avg}/100</strong> sur {ecoLine.n} conducteur{ecoLine.n > 1 ? "s" : ""}
+            {ecoLine.toWatch.length > 0 ? <> · <span className="text-red-600 font-medium">{ecoLine.toWatch.length} à surveiller (≤ 2 étoiles)</span> : {ecoLine.toWatch.map(d => d.driver_name).join(", ")}</> : " · aucun conducteur en alerte"}
+          </span>
+        )}
+        <button onClick={() => onNavigate?.("drivers")} className="ml-auto text-[10px] text-blue-600 hover:underline flex items-center gap-0.5 shrink-0" data-testid="eco-line-link">Détail<ChevronRight size={11} /></button>
+      </div>
+
+      {/* ═══ Pied de source ═══ */}
+      <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 rounded-xl border border-gray-200" data-testid="overview-footer">
+        <div className="w-2 h-2 rounded-full bg-emerald-500 shrink-0" />
+        <span className="text-[10px] text-gray-500">
+          Données 100% LOGITRAK — jour actif = ≥ {efficiency?.active_day_threshold_km || 1} km. Catégories affichées : sans activité 0% · sous-utilisé &lt;30% · utilisation normale 30–84% · forte ≥85% (seuils backend inchangés). Critique = assurance/contrôle échu ou hors ligne &gt; {OFFLINE_PROLONGED_HOURS} h.{pm ? ` Comparaison : période précédente ${prevPeriod.from} au ${prevPeriod.to}.` : " Comparaison période précédente indisponible."}
+        </span>
+        <span className="text-[10px] text-gray-400 ml-auto shrink-0">{fromDate} au {toDate}</span>
+      </div>
+
+      {drawer && <Drawer title={drawer.title} items={drawer.items} onClose={() => setDrawer(null)} onOpenVehicle={(tid) => { setDrawer(null); onOpenVehicle?.(tid); }} />}
     </div>
   );
 };

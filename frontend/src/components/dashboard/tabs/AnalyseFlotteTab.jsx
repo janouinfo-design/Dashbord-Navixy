@@ -10,17 +10,17 @@ import {
   ResponsiveContainer, ReferenceLine, Cell
 } from "recharts";
 
-// ═══ CATEGORIES — single source of truth ═══
+// ═══ CATEGORIES d'AFFICHAGE (décision 1a : fusion modéré + bonne → utilisation normale) — seuils backend inchangés ═══
 const CATEGORIES = [
-  { id: "inactif", label: "Sans activite", color: "#9CA3AF", bg: "bg-gray-400", text: "text-gray-600", border: "border-gray-300", seuil: "0%", def: "Aucun jour d'activite sur la periode" },
-  { id: "sous_utilise", label: "Sous-utilise", color: "#EF4444", bg: "bg-red-500", text: "text-red-600", border: "border-red-300", seuil: "< 30%", def: "Moins de 30% des jours avec activite" },
-  { id: "modere", label: "Modere", color: "#F59E0B", bg: "bg-amber-500", text: "text-amber-600", border: "border-amber-300", seuil: "30–59%", def: "Activite entre 30% et 59% de la periode" },
-  { id: "bonne", label: "Bonne utilisation", color: "#10B981", bg: "bg-emerald-500", text: "text-emerald-600", border: "border-emerald-300", seuil: "60–84%", def: "Activite reguliere sur 60% a 84% de la periode" },
-  { id: "tres_utilise", label: "Forte utilisation", color: "#3B82F6", bg: "bg-blue-500", text: "text-blue-600", border: "border-blue-300", seuil: "≥ 85%", def: "Actif quasiment tous les jours de la periode" },
+  { id: "inactif", match: ["inactif"], label: "Sans activité", color: "#9CA3AF", bg: "bg-gray-400", text: "text-gray-600", border: "border-gray-300", seuil: "0%", def: "Aucun jour d'activité sur la période" },
+  { id: "sous_utilise", match: ["sous_utilise"], label: "Sous-utilisé", color: "#EF4444", bg: "bg-red-500", text: "text-red-600", border: "border-red-300", seuil: "< 30%", def: "Moins de 30% des jours avec activité" },
+  { id: "normale", match: ["modere", "bonne"], label: "Utilisation normale", color: "#10B981", bg: "bg-emerald-500", text: "text-emerald-600", border: "border-emerald-300", seuil: "30–84%", def: "Activité régulière sur 30% à 84% de la période (regroupe modéré 30–59% et bonne 60–84% — calculs backend inchangés)" },
+  { id: "tres_utilise", match: ["tres_utilise"], label: "Forte utilisation", color: "#3B82F6", bg: "bg-blue-500", text: "text-blue-600", border: "border-blue-300", seuil: "≥ 85%", def: "Actif quasiment tous les jours de la période" },
 ];
 const CAT_MAP = Object.fromEntries(CATEGORIES.map(c => [c.id, c]));
-const utilBarColor = (p) => p <= 0 ? '#d1d5db' : p < 30 ? '#EF4444' : p < 60 ? '#F59E0B' : p < 85 ? '#10B981' : '#3B82F6';
-const utilTextCls = (p) => p <= 0 ? 'text-gray-400' : p < 30 ? 'text-red-600' : p < 60 ? 'text-amber-600' : p < 85 ? 'text-emerald-600' : 'text-blue-600';
+const displayCat = (backendCat) => CATEGORIES.find(c => c.match.includes(backendCat)) || CATEGORIES[0];
+const utilBarColor = (p) => p <= 0 ? '#d1d5db' : p < 30 ? '#EF4444' : p < 85 ? '#10B981' : '#3B82F6';
+const utilTextCls = (p) => p <= 0 ? 'text-gray-400' : p < 30 ? 'text-red-600' : p < 85 ? 'text-emerald-600' : 'text-blue-600';
 const DN_FULL = ['Dimanche', 'Lundi', 'Mardi', 'Mercredi', 'Jeudi', 'Vendredi', 'Samedi'];
 const MOIS = ['janvier', 'fevrier', 'mars', 'avril', 'mai', 'juin', 'juillet', 'aout', 'septembre', 'octobre', 'novembre', 'decembre'];
 const DN = ['Dim', 'Lun', 'Mar', 'Mer', 'Jeu', 'Ven', 'Sam'];
@@ -44,7 +44,7 @@ const Tip = ({ label, def, children }) => {
 // ═══ Vehicle Drawer (inchangé — validé iter 9) ═══
 const VehicleDrawer = ({ vehicle, fleetAvg, period, onClose }) => {
   if (!vehicle) return null;
-  const cat = CAT_MAP[vehicle.category] || CATEGORIES[0];
+  const cat = displayCat(vehicle.category);
   const daily = vehicle.daily_breakdown || [];
   const ecart = Math.round(vehicle.utilization_pct - fleetAvg.util);
 
@@ -165,7 +165,7 @@ export const AnalyseFlotteTab = ({ data, fromDate, toDate }) => {
     const used = vehicles.filter(v => v.active_days > 0).length;
     const inactive = totalV - used;
     const catCounts = {};
-    CATEGORIES.forEach(c => { catCounts[c.id] = vehicles.filter(v => v.category === c.id).length; });
+    CATEGORIES.forEach(c => { catCounts[c.id] = vehicles.filter(v => c.match.includes(v.category)).length; });
     const totalKm = Math.round(vehicles.reduce((s, v) => s + (v.period_mileage || 0), 0) * 10) / 10;
     const kmPerUsed = used > 0 ? Math.round(totalKm / used) : 0;
     const withEh = vehicles.filter(v => (v.engine_hours || 0) > 0).length;
@@ -287,7 +287,7 @@ export const AnalyseFlotteTab = ({ data, fromDate, toDate }) => {
       list = list.filter(v => (v.daily_breakdown || []).some(d => d.date === f.day && d.active));
     } else if (f.category !== 'all') {
       if (f.category === 'used') list = list.filter(v => v.active_days > 0);
-      else list = list.filter(v => v.category === f.category);
+      else list = list.filter(v => (CAT_MAP[f.category]?.match || [f.category]).includes(v.category));
     }
     list.sort((a, b) => {
       let va = a[f.sortBy] ?? -1, vb = b[f.sortBy] ?? -1;
@@ -328,7 +328,7 @@ export const AnalyseFlotteTab = ({ data, fromDate, toDate }) => {
       </div>
 
       {/* ═══ ZONE 1 — MÉTRIQUES D'ARBITRAGE ═══ */}
-      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-6 gap-3" data-testid="analyse-summary">
+      <div className="grid grid-cols-2 md:grid-cols-3 xl:grid-cols-5 gap-3" data-testid="analyse-summary">
         {/* Flotte active vs dormante */}
         <button onClick={() => setCategory('used')} data-testid="kpi-used"
           className={`bg-white rounded-xl border p-3.5 text-left transition-all hover:shadow-sm ${isActive('used') ? 'ring-2 ring-[#111]' : 'border-gray-200'}`}>
@@ -343,8 +343,8 @@ export const AnalyseFlotteTab = ({ data, fromDate, toDate }) => {
           )}
         </button>
 
-        {/* 4 catégories utilisées */}
-        {['sous_utilise', 'modere', 'bonne', 'tres_utilise'].map(cid => {
+        {/* 3 catégories d'affichage (harmonisation 1a) */}
+        {['sous_utilise', 'normale', 'tres_utilise'].map(cid => {
           const c = CAT_MAP[cid];
           const count = catCounts[cid] || 0;
           return (
@@ -538,11 +538,10 @@ export const AnalyseFlotteTab = ({ data, fromDate, toDate }) => {
           </div>
           {[
             { id: 'all', label: 'Tous', count: vehicles.length },
-            { id: 'used', label: 'Utilises', count: analytics.used },
-            { id: 'inactif', label: 'Sans activite', count: analytics.inactive },
-            { id: 'sous_utilise', label: 'Sous-utilise', count: catCounts.sous_utilise || 0 },
-            { id: 'modere', label: 'Modere', count: catCounts.modere || 0 },
-            { id: 'bonne', label: 'Bonne utilisation', count: catCounts.bonne || 0 },
+            { id: 'used', label: 'Utilisés', count: analytics.used },
+            { id: 'inactif', label: 'Sans activité', count: analytics.inactive },
+            { id: 'sous_utilise', label: 'Sous-utilisé', count: catCounts.sous_utilise || 0 },
+            { id: 'normale', label: 'Utilisation normale', count: catCounts.normale || 0 },
             { id: 'tres_utilise', label: 'Forte utilisation', count: catCounts.tres_utilise || 0 },
           ].map(f => (
             <button key={f.id} onClick={() => { if (f.count > 0 || f.id === 'all') setFilters(prev => ({ ...prev, category: prev.category === f.id ? 'all' : f.id, day: null })); }}
@@ -584,7 +583,7 @@ export const AnalyseFlotteTab = ({ data, fromDate, toDate }) => {
               </tr></thead>
               <tbody>
                 {filtered.map(v => {
-                  const cat = CAT_MAP[v.category] || CATEGORIES[0];
+                  const cat = displayCat(v.category);
                   const ecart = Math.round((v.utilization_pct || 0) - fleetAvg.util);
                   return (
                     <tr key={v.tracker_id} className="border-b border-gray-50 hover:bg-gray-50/60 cursor-pointer transition-colors"
@@ -617,7 +616,7 @@ export const AnalyseFlotteTab = ({ data, fromDate, toDate }) => {
       {/* ═══ DATA SOURCE ═══ */}
       <div className="flex items-center gap-2 px-4 py-2 bg-gray-50 rounded-xl border border-gray-200">
         <span className="w-2 h-2 rounded-full bg-emerald-500" />
-        <span className="text-[10px] text-gray-500">Jour actif = distance &ge; {threshold} km. Seuils : sous-utilise (&lt;30%) | modere (30–59%) | bonne (60–84%) | forte (&ge;85%). Moteur = compteur cumulatif total. Groupes = tracker/group/list LOGITRAK. Donnees LOGITRAK.</span>
+        <span className="text-[10px] text-gray-500">Jour actif = distance &ge; {threshold} km. Catégories affichées : sous-utilisé (&lt;30%) | utilisation normale (30–84%) | forte (&ge;85%) — seuils de calcul backend inchangés. Moteur = compteur cumulatif total. Groupes = tracker/group/list LOGITRAK. Données LOGITRAK.</span>
       </div>
 
       {/* ═══ VEHICLE DRAWER ═══ */}
