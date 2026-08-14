@@ -127,12 +127,20 @@ const Drawer = ({ title, items, icon, tone, onClose, onOpenVehicle }) => (
           <button key={`${it.tid}-${idx}`} onClick={() => onOpenVehicle?.(it.tid)}
             className="w-full flex items-center justify-between px-3 py-2.5 rounded-lg hover:bg-gray-50 text-left transition-colors"
             data-testid={`drawer-vehicle-${it.tid}`}>
-            <div>
-              <div className="text-xs font-medium text-gray-900">{it.label}</div>
-              {it.sub && <div className="text-[10px] text-gray-400">{it.sub}</div>}
+            <div className="min-w-0 flex-1">
+              <div className="text-xs font-medium text-gray-900 truncate">{it.label}</div>
+              {it.sub && <div className="text-[10px] text-gray-400 truncate">{it.sub}</div>}
             </div>
-            <div className="flex items-center gap-2">
-              {it.value != null && <span className={`text-xs font-semibold tabular-nums ${it.valueCls || "text-gray-700"}`}>{it.value}</span>}
+            <div className="flex items-center gap-2 shrink-0 max-w-[55%]">
+              {it.chips ? (
+                <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                  {it.chips.map((ch, i) => (
+                    <span key={i} className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-semibold tabular-nums ${ch.cls}`}>
+                      {ch.icon && <ch.icon size={11} />}{ch.text}
+                    </span>
+                  ))}
+                </div>
+              ) : it.value != null && <span className={`text-xs font-semibold tabular-nums ${it.valueCls || "text-gray-700"}`}>{it.value}</span>}
               <ChevronRight size={13} className="text-gray-300" />
             </div>
           </button>
@@ -297,6 +305,9 @@ export const OverviewTab = ({ data, fromDate, toDate, onNavigate, onOpenVehicle 
       const hasFuel = fl?.available && typeof fl.value === "number";
       const hasSoc = soc?.available && typeof soc.value === "number";
       const rangeTxt = (rng?.available && typeof rng.value === "number") ? ` · ${Math.round(rng.value)} km` : "";
+      const chipFuel = hasFuel ? { icon: MatWaterDrop, text: `${Math.round(fl.value)} %`, cls: fl.value < threshold ? "bg-red-50 text-red-600" : "bg-gray-100 text-gray-700" } : null;
+      const chipBatt = hasSoc ? { icon: MatBatteryFull, text: `${Math.round(soc.value)} %`, cls: soc.value < threshold ? "bg-red-50 text-red-600" : "bg-emerald-50 text-emerald-700" } : null;
+      const chipRange = (rng?.available && typeof rng.value === "number") ? { icon: Route, text: `${Math.round(rng.value)} km`, cls: "bg-gray-100 text-gray-600" } : null;
       if (hasFuel || hasSoc) {
         // 1 véhicule = 1 entrée télémétrie (jamais compté deux fois même avec carburant ET batterie)
         const parts = [];
@@ -304,17 +315,17 @@ export const OverviewTab = ({ data, fromDate, toDate, onNavigate, onOpenVehicle 
         if (hasSoc) parts.push(`batt. ${Math.round(soc.value)} %${rangeTxt}`);
         const descr = [hasFuel ? `Niveau carburant${fl.status === "STALE" ? ` · donnée ancienne (${fl.update_time})` : ""}` : null,
                        hasSoc ? "Batterie de traction" : null].filter(Boolean).join(" · ");
-        telemetry.push({ ...item, value: parts.join(" · "), sub: `${plate}${descr}` });
+        telemetry.push({ ...item, value: parts.join(" · "), chips: [chipFuel, chipBatt, chipRange].filter(Boolean), sub: `${plate}${descr}` });
       }
       if (hasFuel) {
         if (fl.value < threshold)
-          fuelLow.push({ ...item, value: `${Math.round(fl.value)} %`, valueCls: "text-red-600", sub: `${plate}${fl.status === "STALE" ? `Donnée ancienne (${fl.update_time})` : `MAJ ${fl.update_time}`}` });
+          fuelLow.push({ ...item, value: `${Math.round(fl.value)} %`, chips: [chipFuel], valueCls: "text-red-600", sub: `${plate}${fl.status === "STALE" ? `Donnée ancienne (${fl.update_time})` : `MAJ ${fl.update_time}`}` });
       }
       if (hasSoc) {
         socs.push(soc.value);
         // Règle 2b : alerte EV uniquement sur donnée réelle ET récente (status AVAILABLE) — jamais critique
         if (soc.status === "AVAILABLE" && soc.value < threshold)
-          battLow.push({ ...item, value: `batt. ${Math.round(soc.value)} %${rangeTxt}`, valueCls: "text-red-600", sub: `${plate}Batterie de traction · MAJ ${soc.update_time}` });
+          battLow.push({ ...item, value: `batt. ${Math.round(soc.value)} %${rangeTxt}`, chips: [chipBatt, chipRange].filter(Boolean), valueCls: "text-red-600", sub: `${plate}Batterie de traction · MAJ ${soc.update_time}` });
       }
       const kwh = c?.capabilities?.ev_kwh_per_100km;
       if (kwh?.available && typeof kwh.value === "number") kwhs.push(kwh.value);
