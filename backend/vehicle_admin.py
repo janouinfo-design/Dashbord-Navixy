@@ -252,7 +252,7 @@ def create_vehicle_admin_router(db, navixy, get_tenant_context, navixy_api_url):
         return {"success": True, "record": await _get_or_empty(tenant, tracker_id)}
 
     @router.get("/{tracker_id}/documents/{doc_id}")
-    async def download_document(tracker_id: int, doc_id: str, request: Request):
+    async def download_document(tracker_id: int, doc_id: str, request: Request, inline: int = 0):
         _, tenant = await get_tenant_context(request)
         doc = await col.find_one({"tenant": tenant, "tracker_id": tracker_id}, {"_id": 0, "documents": 1})
         meta = next((m for m in (doc or {}).get("documents", []) if m["id"] == doc_id), None)
@@ -261,7 +261,8 @@ def create_vehicle_admin_router(db, navixy, get_tenant_context, navixy_api_url):
         path = os.path.join(UPLOAD_DIR, tenant, str(tracker_id), f"{doc_id}_{meta['filename']}")
         if not os.path.exists(path):
             raise HTTPException(404, "Fichier introuvable sur le disque")
-        return FileResponse(path, media_type=meta["content_type"], filename=meta["filename"])
+        return FileResponse(path, media_type=meta["content_type"], filename=meta["filename"],
+                            content_disposition_type="inline" if inline else "attachment")
 
     @router.delete("/{tracker_id}/documents/{doc_id}")
     async def delete_document(tracker_id: int, doc_id: str, request: Request):

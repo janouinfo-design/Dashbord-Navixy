@@ -3,7 +3,7 @@ import { API, api } from "@/lib/api";
 import {
   AlertTriangle, WifiOff, Wifi, ChevronRight, X, Fuel, Leaf, HelpCircle,
   Car, CalendarX, Route, Gauge, Shield, CheckCircle2, Wrench,
-  FileText, Phone, Shuffle, CalendarClock, Plug
+  FileText, Phone, Shuffle, CalendarClock, Plug, PlugZap
 } from "lucide-react";
 import {
   ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
@@ -292,7 +292,8 @@ export const OverviewTab = ({ data, fromDate, toDate, onNavigate, onOpenVehicle 
   // ═══ Énergie & consommation (capabilities réelles — jamais de 0 fabriqué) ═══
   const energy = useMemo(() => {
     const mix = { thermique: [], electrique: [], hybride: [], inconnu: [] };
-    const fuelLow = [], battLow = [], telemetry = [], battItems = [];
+    const fuelLow = [], battLow = [], telemetry = [], battItems = [], chargingItems = [];
+    let chargingCapCount = 0;
     const socs = [], kwhs = [];
     for (const v of vehicles) {
       const c = capsRecs[String(v.tracker_id)];
@@ -330,6 +331,11 @@ export const OverviewTab = ({ data, fromDate, toDate, onNavigate, onOpenVehicle 
       }
       const kwh = c?.capabilities?.ev_kwh_per_100km;
       if (kwh?.available && typeof kwh.value === "number") kwhs.push(kwh.value);
+      const cst = c?.capabilities?.ev_charging_state;
+      if (cst?.available) {
+        chargingCapCount += 1;
+        if (cst.value === "charging") chargingItems.push({ ...item, chips: [chipBatt, chipRange].filter(Boolean), sub: `${plate}Recharge en cours` });
+      }
     }
     // Consommation ESTIMÉE (décision 3a) : taux configuré × km — obd_consumption exclu (unité non confirmée)
     const fuelEstVehicles = vehicles.filter(v => v.fuel_used_liters !== null && v.fuel_used_liters !== undefined);
@@ -337,7 +343,7 @@ export const OverviewTab = ({ data, fromDate, toDate, onNavigate, onOpenVehicle 
     const estKm = fuelEstVehicles.reduce((s, v) => s + (v.mileage || 0), 0);
     const estL100 = estKm > 0 ? Math.round((estLiters / estKm) * 1000) / 10 : null;
     const evKnownNoTelemetry = (mix.electrique.length + mix.hybride.length) > 0 && socs.length === 0;
-    return { mix, fuelLow, battLow, telemetry, battItems, socs, kwhs, fuelEstVehicles, estLiters, estL100, evKnownNoTelemetry };
+    return { mix, fuelLow, battLow, telemetry, battItems, chargingItems, chargingCapCount, socs, kwhs, fuelEstVehicles, estLiters, estL100, evKnownNoTelemetry };
   }, [vehicles, capsRecs, threshold]);
 
   // ═══ Maintenance & conformité — uniquement dates réelles des fiches vehicle_admin (décision 4a : docs manquants omis) ═══
@@ -689,6 +695,13 @@ export const OverviewTab = ({ data, fromDate, toDate, onNavigate, onOpenVehicle 
                       sub={`véhicule${energy.battLow.length > 1 ? "s" : ""} — donnée réelle et récente uniquement`}
                       onClick={energy.battLow.length ? () => open(`Batterie EV faible (< ${threshold} %)`, energy.battLow, MatBatteryCharging, "orange") : undefined}
                       testId="energy-ev-low" />
+                  )}
+                  {energy.chargingCapCount > 0 && (
+                    <EnergyCard icon={PlugZap} iconCls={energy.chargingItems.length ? "text-emerald-500" : "text-gray-300"} label="En charge" unit="(recharge en cours)"
+                      value={energy.chargingItems.length} valueCls={energy.chargingItems.length ? "text-emerald-600" : "text-gray-300"}
+                      sub={energy.chargingItems.length ? `véhicule${energy.chargingItems.length > 1 ? "s" : ""} branché${energy.chargingItems.length > 1 ? "s" : ""} en charge · dernier scan télémétrie` : "aucun véhicule en charge · dernier scan télémétrie"}
+                      onClick={energy.chargingItems.length ? () => open("Véhicules en charge", energy.chargingItems, PlugZap, "green") : undefined}
+                      testId="energy-charging" />
                   )}
                   <EnergyCard icon={MatWifi} iconCls="text-gray-400" label="Couverture télémétrie énergie" unit=""
                     value={`${telemetryPct}%`} sub={`${energy.telemetry.length}/${m.total} véhicules avec niveau carburant ou batterie réellement mesuré`}

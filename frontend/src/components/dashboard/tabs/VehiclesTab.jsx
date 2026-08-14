@@ -3,7 +3,7 @@ import { API, api } from "@/lib/api";
 import {
   Search, ChevronRight, X, Pencil, Check, Plus, Trash2,
   FileText, Download, Upload, Hash, Gauge, Radio, ShieldCheck,
-  CreditCard, ClipboardList, FolderOpen, Car, Loader2, Camera, RefreshCw, PlugZap, Plug, Battery
+  CreditCard, ClipboardList, FolderOpen, Car, Loader2, Camera, RefreshCw, PlugZap, Plug, Battery, Eye
 } from "lucide-react";
 
 // ─── Échéances : rouge = échu, orange < 30 j, vert sinon ───
@@ -324,6 +324,19 @@ const EtatTab = ({ tid, record, refresh }) => {
   );
 };
 
+// Fichier chargé via l'API authentifiée (les <img>/<a> directs ne portent pas le header d'impersonation)
+const AuthedFile = ({ url, render }) => {
+  const [src, setSrc] = useState(null);
+  useEffect(() => {
+    let obj = null, cancelled = false;
+    api.get(url, { responseType: "blob" })
+      .then(r => { if (!cancelled) { obj = URL.createObjectURL(r.data); setSrc(obj); } })
+      .catch(() => {});
+    return () => { cancelled = true; if (obj) URL.revokeObjectURL(obj); };
+  }, [url]);
+  return render(src);
+};
+
 // ─── Onglet Documents ───
 const DocumentsTab = ({ tid, record, refresh }) => {
   const [category, setCategory] = useState("Carte grise");
@@ -346,6 +359,17 @@ const DocumentsTab = ({ tid, record, refresh }) => {
   };
   const del = async (docId) => { await api.delete(`${API}/vehicles/admin/${tid}/documents/${docId}`); refresh(); };
   const items = [...(record.documents || [])].sort((a, b) => (b.uploaded_at || "").localeCompare(a.uploaded_at || ""));
+  const [preview, setPreview] = useState(null);
+  const fileUrl = (d, inline) => `${API}/vehicles/admin/${tid}/documents/${d.id}${inline ? "?inline=1" : ""}`;
+  const isImage = (d) => (d.content_type || "").startsWith("image/");
+  const isPdf = (d) => (d.content_type || "") === "application/pdf";
+  const download = async (d) => {
+    const r = await api.get(fileUrl(d, false), { responseType: "blob" });
+    const u = URL.createObjectURL(r.data);
+    const a = document.createElement("a");
+    a.href = u; a.download = d.filename; a.click();
+    setTimeout(() => URL.revokeObjectURL(u), 5000);
+  };
 
   return (
     <div className="space-y-3" data-testid="tab-content-documents">
@@ -369,19 +393,63 @@ const DocumentsTab = ({ tid, record, refresh }) => {
       ) : items.map(d => (
         <div key={d.id} className="flex items-center justify-between bg-white border border-gray-200 rounded-xl p-3.5" data-testid={`doc-item-${d.id}`}>
           <div className="flex items-center gap-3 min-w-0">
-            <div className="w-9 h-9 rounded-lg bg-gray-50 border border-gray-200 flex items-center justify-center shrink-0"><FileText size={15} className="text-gray-400" /></div>
+            {isImage(d) ? (
+              <button onClick={() => setPreview(d)} className="w-12 h-12 rounded-lg border border-gray-200 overflow-hidden shrink-0 hover:opacity-80 transition-opacity bg-gray-50" title="Aperçu" data-testid={`doc-thumb-${d.id}`}>
+                <AuthedFile url={fileUrl(d, true)} render={(src) => src
+                  ? <img src={src} alt={d.filename} className="w-full h-full object-cover" />
+                  : <FileText size={17} className="text-gray-300 m-auto" />} />
+              </button>
+            ) : (
+              <div className={`w-12 h-12 rounded-lg bg-gray-50 border border-gray-200 flex items-center justify-center shrink-0 ${isPdf(d) ? "cursor-pointer hover:bg-gray-100" : ""}`}
+                onClick={isPdf(d) ? () => setPreview(d) : undefined} title={isPdf(d) ? "Aperçu" : undefined}>
+                <FileText size={17} className={isPdf(d) ? "text-red-400" : "text-gray-400"} />
+              </div>
+            )}
             <div className="min-w-0">
               <div className="text-xs font-medium text-gray-900 truncate">{d.filename}</div>
               <div className="text-[10px] text-gray-400">{d.category} · {fmtSize(d.size)} · {fmtDate(d.uploaded_at)}</div>
             </div>
           </div>
           <div className="flex items-center gap-1 shrink-0">
-            <a href={`${API}/vehicles/admin/${tid}/documents/${d.id}`} target="_blank" rel="noreferrer"
-              className="p-1.5 text-gray-400 hover:text-gray-700" title="Télécharger" data-testid={`doc-download-${d.id}`}><Download size={14} /></a>
+            {(isImage(d) || isPdf(d)) && (
+              <button onClick={() => setPreview(d)} className="p-1.5 text-gray-400 hover:text-gray-700" title="Aperçu" data-testid={`doc-preview-${d.id}`}><Eye size={14} /></button>
+            )}
+            <button onClick={() => download(d)}
+              className="p-1.5 text-gray-400 hover:text-gray-700" title="Télécharger" data-testid={`doc-download-${d.id}`}><Download size={14} /></button>
             <button onClick={() => del(d.id)} className="p-1.5 text-gray-300 hover:text-red-500" data-testid={`doc-del-${d.id}`}><Trash2 size={13} /></button>
           </div>
         </div>
       ))}
+
+      {preview && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center p-4">
+          <div className="absolute inset-0 bg-black/60" onClick={() => setPreview(null)} />
+          <div className="relative bg-white rounded-xl shadow-2xl w-full max-w-4xl h-[85vh] flex flex-col overflow-hidden" data-testid="doc-preview-modal">
+            <div className="flex items-center justify-between px-4 py-3 border-b border-gray-200 shrink-0">
+              <div className="min-w-0">
+                <div className="text-xs font-semibold text-gray-900 truncate">{preview.filename}</div>
+                <div className="text-[10px] text-gray-400">{preview.category} · {fmtSize(preview.size)}</div>
+              </div>
+              <div className="flex items-center gap-1 shrink-0">
+                <button onClick={() => download(preview)} className="p-2 text-gray-400 hover:text-gray-700" title="Télécharger" data-testid="doc-preview-download"><Download size={15} /></button>
+                <button onClick={() => setPreview(null)} className="p-2 text-gray-500 hover:bg-gray-100 rounded-lg" data-testid="doc-preview-close"><X size={16} /></button>
+              </div>
+            </div>
+            <div className="flex-1 bg-gray-100 overflow-auto flex items-center justify-center">
+              <AuthedFile url={fileUrl(preview, true)} render={(src) => !src
+                ? <Loader2 size={22} className="animate-spin text-gray-400" />
+                : isImage(preview)
+                  ? <img src={src} alt={preview.filename} className="max-w-full max-h-full object-contain" />
+                  : <iframe title={preview.filename} src={src} className="w-full h-full border-0" />} />
+            </div>
+            {isPdf(preview) && (
+              <div className="px-4 py-2 border-t border-gray-100 text-[10px] text-gray-400 shrink-0">
+                Si l'aperçu PDF ne s'affiche pas dans votre navigateur, utilisez le bouton de téléchargement ci-dessus.
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };
