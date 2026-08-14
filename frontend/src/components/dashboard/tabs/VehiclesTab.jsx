@@ -443,7 +443,7 @@ const VehicleSheet = ({ vehicle, record, garageVehicle, unlinkedGarage, groupNam
   const g = record.general || {};
 
   return (
-    <div className="fixed inset-y-0 right-0 w-full lg:w-[720px] bg-gray-50 shadow-2xl z-[70] overflow-y-auto" data-testid="vehicle-sheet">
+    <div className="fixed inset-y-0 right-0 w-full max-w-full lg:w-[880px] xl:w-[980px] bg-gray-50 shadow-2xl z-[70] overflow-y-auto" data-testid="vehicle-sheet">
       {/* Header */}
       <div className="sticky top-0 bg-white border-b border-gray-200 px-6 pt-4 z-10">
         <div className="flex items-start justify-between">
