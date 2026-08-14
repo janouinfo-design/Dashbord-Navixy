@@ -33,4 +33,11 @@
 ## Tests obligatoires (fin: rapport Réalisé/Partiel/Non réalisé avec raisons)
 Flottes: Techlift (100% thermique réel), FlexMobil (mixte réel, 18 fuel_level, 0 EV data), demo-ev (EV simulé), test-beta (Navixy KO → dégradation propre). Vérifier: pas de SoC=0, pas de 0 L/100 sur véhicule sans taux, couverture affichée, drill-downs = comptes exacts, périodes (aujourd'hui/7j/30j/custom), 1920/1366/1024, pytest 48/48, multi-tenant.
 
-## Statut: LIVRÉ ET VALIDÉ (iterations 24 + 25 — 100%). Cohérence Vue générale ↔ Analyse flotte vérifiée (FlexMobil 17/2/23/10 = 52 dans les deux onglets). Détails d'implémentation dans PRD.md.
+## Statut: CHANTIER CLÔTURÉ (2026-06 — iterations 24/25/26/27, frontend 100%, suites pytest de référence 120/120)
+Rapport final Réalisé/Partiel/Non réalisé remis à l'utilisateur. Détails d'implémentation dans PRD.md.
+
+## Backlog priorisé VALIDÉ PAR L'UTILISATEUR (chantiers SÉPARÉS — ne pas mélanger avec le Dashboard):
+1. **Conducteurs & Éco-conduite** — prochain chantier, AUDIT COMPLET SANS CODE obligatoire avant toute modification
+2. **Configuration consommation estimée** — valeur PAR VÉHICULE avec fallback éventuel au niveau client (pas uniquement un taux global client)
+3. **Aperçu Documents** — à intégrer dans un futur chantier Documents
+4. **Historique Snapshots (deltas SoC/couverture)** — REPORTÉ : à mettre en place seulement quand besoin réel de tendances + données EV réelles en production
