@@ -299,7 +299,6 @@ export const OverviewTab = ({ data, fromDate, toDate, onNavigate, onOpenVehicle 
       const c = capsRecs[String(v.tracker_id)];
       const plate = c?.reg_number ? `${c.reg_number} · ` : "";
       const item = { tid: v.tracker_id, label: v.label, sub: c?.reg_number || undefined };
-      mix[energyOf(c?.motorisation)].push(item);
       const fl = c?.capabilities?.fuel_level;
       const soc = c?.capabilities?.ev_soc;
       const rng = c?.capabilities?.ev_range;
@@ -309,6 +308,8 @@ export const OverviewTab = ({ data, fromDate, toDate, onNavigate, onOpenVehicle 
       const chipFuel = hasFuel ? { icon: MatWaterDrop, text: `${Math.round(fl.value)} %`, cls: fl.value < threshold ? "bg-red-50 text-red-600" : "bg-gray-100 text-gray-700" } : null;
       const chipBatt = hasSoc ? { icon: MatBatteryFull, text: `${Math.round(soc.value)} %`, cls: soc.value < threshold ? "bg-red-50 text-red-600" : "bg-emerald-50 text-emerald-700" } : null;
       const chipRange = (rng?.available && typeof rng.value === "number") ? { icon: Route, text: `${Math.round(rng.value)} km`, cls: "bg-gray-100 text-gray-600" } : null;
+      const allChips = [chipFuel, chipBatt, chipRange].filter(Boolean);
+      mix[energyOf(c?.motorisation)].push({ ...item, chips: allChips.length ? allChips : undefined });
       if (hasFuel || hasSoc) {
         // 1 véhicule = 1 entrée télémétrie (jamais compté deux fois même avec carburant ET batterie)
         const parts = [];
