@@ -293,13 +293,15 @@ export const OverviewTab = ({ data, fromDate, toDate, onNavigate, onOpenVehicle 
       mix[energyOf(c?.motorisation)].push(item);
       const fl = c?.capabilities?.fuel_level;
       const soc = c?.capabilities?.ev_soc;
+      const rng = c?.capabilities?.ev_range;
       const hasFuel = fl?.available && typeof fl.value === "number";
       const hasSoc = soc?.available && typeof soc.value === "number";
+      const rangeTxt = (rng?.available && typeof rng.value === "number") ? ` · ${Math.round(rng.value)} km` : "";
       if (hasFuel || hasSoc) {
         // 1 véhicule = 1 entrée télémétrie (jamais compté deux fois même avec carburant ET batterie)
         const parts = [];
         if (hasFuel) parts.push(`carb. ${Math.round(fl.value)} %`);
-        if (hasSoc) parts.push(`batt. ${Math.round(soc.value)} %`);
+        if (hasSoc) parts.push(`batt. ${Math.round(soc.value)} %${rangeTxt}`);
         const descr = [hasFuel ? `Niveau carburant${fl.status === "STALE" ? ` · donnée ancienne (${fl.update_time})` : ""}` : null,
                        hasSoc ? "Batterie de traction" : null].filter(Boolean).join(" · ");
         telemetry.push({ ...item, value: parts.join(" · "), sub: `${plate}${descr}` });
@@ -312,7 +314,7 @@ export const OverviewTab = ({ data, fromDate, toDate, onNavigate, onOpenVehicle 
         socs.push(soc.value);
         // Règle 2b : alerte EV uniquement sur donnée réelle ET récente (status AVAILABLE) — jamais critique
         if (soc.status === "AVAILABLE" && soc.value < threshold)
-          battLow.push({ ...item, value: `batt. ${Math.round(soc.value)} %`, valueCls: "text-red-600", sub: `${plate}Batterie de traction · MAJ ${soc.update_time}` });
+          battLow.push({ ...item, value: `batt. ${Math.round(soc.value)} %${rangeTxt}`, valueCls: "text-red-600", sub: `${plate}Batterie de traction · MAJ ${soc.update_time}` });
       }
       const kwh = c?.capabilities?.ev_kwh_per_100km;
       if (kwh?.available && typeof kwh.value === "number") kwhs.push(kwh.value);
