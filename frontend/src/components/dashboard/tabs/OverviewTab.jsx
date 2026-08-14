@@ -292,7 +292,7 @@ export const OverviewTab = ({ data, fromDate, toDate, onNavigate, onOpenVehicle 
   // ═══ Énergie & consommation (capabilities réelles — jamais de 0 fabriqué) ═══
   const energy = useMemo(() => {
     const mix = { thermique: [], electrique: [], hybride: [], inconnu: [] };
-    const fuelLow = [], battLow = [], telemetry = [];
+    const fuelLow = [], battLow = [], telemetry = [], battItems = [];
     const socs = [], kwhs = [];
     for (const v of vehicles) {
       const c = capsRecs[String(v.tracker_id)];
@@ -323,6 +323,7 @@ export const OverviewTab = ({ data, fromDate, toDate, onNavigate, onOpenVehicle 
       }
       if (hasSoc) {
         socs.push(soc.value);
+        battItems.push({ ...item, chips: [chipBatt, chipRange].filter(Boolean), sub: `${plate}Batterie de traction · MAJ ${soc.update_time}` });
         // Règle 2b : alerte EV uniquement sur donnée réelle ET récente (status AVAILABLE) — jamais critique
         if (soc.status === "AVAILABLE" && soc.value < threshold)
           battLow.push({ ...item, value: `batt. ${Math.round(soc.value)} %${rangeTxt}`, chips: [chipBatt, chipRange].filter(Boolean), valueCls: "text-red-600", sub: `${plate}Batterie de traction · MAJ ${soc.update_time}` });
@@ -336,7 +337,7 @@ export const OverviewTab = ({ data, fromDate, toDate, onNavigate, onOpenVehicle 
     const estKm = fuelEstVehicles.reduce((s, v) => s + (v.mileage || 0), 0);
     const estL100 = estKm > 0 ? Math.round((estLiters / estKm) * 1000) / 10 : null;
     const evKnownNoTelemetry = (mix.electrique.length + mix.hybride.length) > 0 && socs.length === 0;
-    return { mix, fuelLow, battLow, telemetry, socs, kwhs, fuelEstVehicles, estLiters, estL100, evKnownNoTelemetry };
+    return { mix, fuelLow, battLow, telemetry, battItems, socs, kwhs, fuelEstVehicles, estLiters, estL100, evKnownNoTelemetry };
   }, [vehicles, capsRecs, threshold]);
 
   // ═══ Maintenance & conformité — uniquement dates réelles des fiches vehicle_admin (décision 4a : docs manquants omis) ═══
@@ -679,7 +680,8 @@ export const OverviewTab = ({ data, fromDate, toDate, onNavigate, onOpenVehicle 
                   )}
                   {avgSoc !== null && (
                     <EnergyCard icon={MatBatteryFull} iconCls="text-emerald-500" label="SOC moyen EV" unit="(Électriques)"
-                      value={`${avgSoc}%`} sub={`${energy.socs.length} EV avec télémétrie batterie`} testId="energy-ev-soc" />
+                      value={`${avgSoc}%`} sub={`${energy.socs.length} EV avec télémétrie batterie`}
+                      onClick={() => open("SOC batterie EV", energy.battItems, MatBatteryFull, "green")} testId="energy-ev-soc" />
                   )}
                   {avgSoc !== null && (
                     <EnergyCard icon={MatBatteryCharging} iconWrap="red-square" label="EV batterie faible" unit={`(< ${threshold} %)`}
