@@ -18,6 +18,12 @@ export const LoginPage = ({ clientInfo }) => {
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
+  // Bloc démo : jamais affiché sur les sous-domaines des clients réels
+  const host = window.location.hostname;
+  const showDemo = (host.includes("preview.emergentagent.com") || host === "dashboard.logitrak.ch" || host === "localhost")
+    && (!clientInfo?.name || clientInfo.name === "Default");
+  const fillDemo = () => { setEmail("demo@logitrak.ch"); setPassword("DemoEV2026!"); setError(""); };
+
   const handleSubmit = async (e) => {
     e.preventDefault();
     setError("");
@@ -84,6 +90,20 @@ export const LoginPage = ({ clientInfo }) => {
             Se connecter
           </button>
         </form>
+
+        {showDemo && (
+          <div className="mt-4 bg-white rounded-2xl border border-gray-200 shadow-sm p-4" data-testid="demo-accounts-block">
+            <p className="text-center text-[10px] font-semibold uppercase tracking-wider text-gray-400 mb-3">Comptes démo</p>
+            <div className="flex justify-center">
+              <button type="button" onClick={fillDemo}
+                className="px-6 py-2 rounded-full border border-gray-200 text-sm font-medium text-gray-700 hover:bg-gray-50 hover:border-gray-300 transition-colors"
+                data-testid="demo-admin-btn">
+                Admin
+              </button>
+            </div>
+            <p className="text-center text-[10px] text-gray-400 mt-3">Flotte de démonstration — données simulées</p>
+          </div>
+        )}
 
         <p className="text-center text-[11px] text-gray-400 mt-6">
           Accès sécurisé — données 100% réelles LOGITRAK
