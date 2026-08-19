@@ -74,6 +74,11 @@ def _day_km(tid: int, d) -> float:
         return 0.0
     if tid == 900004 and d.weekday() >= 4:
         return 0.0  # PHEV sous-utilisé
+    if tid == 900005:
+        # Caddy diesel : roulage utilitaire soutenu, silencieux depuis 2 jours (cohérent avec son statut hors ligne)
+        if (datetime.now().date() - d).days < 2:
+            return 0.0
+        return round(35 + _rand(tid, "km", d.isoformat()) * 90, 1)
     return round(18 + _rand(tid, "km", d.isoformat()) * 70, 1)
 
 
@@ -203,7 +208,7 @@ def simulate(endpoint: str, params: dict) -> dict:
             if tid in _BY_TID:
                 days, d = {}, d0
                 while d <= min(d1, now.date()):
-                    days[d.isoformat()] = {"mileage": 0.0 if tid == 900005 else _day_km(tid, d)}
+                    days[d.isoformat()] = {"mileage": _day_km(tid, d)}
                     d += timedelta(days=1)
                 result[str(tid)] = days
         return {"success": True, "result": result}
